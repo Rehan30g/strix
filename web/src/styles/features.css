@@ -1,0 +1,62 @@
+/* ---------- spoken captions (Chat + intro) ---------- */
+.caps { display: flex; flex-direction: column; justify-content: flex-end; gap: 14px; max-height: 100%; overflow: hidden; text-align: center;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 34%); mask-image: linear-gradient(to bottom, transparent 0, #000 34%); }
+.cap-b { margin: 0; font-size: 22px; line-height: 1.45; font-weight: 450; letter-spacing: -.005em; color: var(--fg); overflow-wrap: anywhere; transition: opacity .5s var(--ease), transform .5s var(--ease); text-wrap: pretty; }
+.cap-b.old { opacity: .32; }
+.cap-b.prev { color: var(--muted); font-size: 18px; }
+.cap-b.verdict { font-size: 18px; color: var(--fg-2); }
+.cap-b.gone { opacity: 0; transform: translateY(-14px); }
+.cap-b:empty { display: none; }
+.cap-b .w { display: inline-block; animation: wordIn .42s cubic-bezier(.2, .7, .2, 1) both; }
+.cap-b .w.st { animation: fade .35s ease both; }
+/* interrupted: the unspoken rest of the line dims and fades away */
+.cap-b .w.cut { color: var(--faint); animation: cutFade 1.7s ease forwards; }
+@keyframes cutFade { 0% { opacity: .55; } 100% { opacity: 0; } }
+@keyframes wordIn { from { opacity: 0; filter: blur(7px); transform: translateY(3px); } to { opacity: 1; filter: blur(0); transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cap-b .w, .cap-b .w.st { animation: none; } .cap-b { transition: none; } }
+
+/* ---------- Studio Bola ---------- */
+.os-dlg { width: min(560px, 100%); }
+.os { display: flex; flex-direction: column; gap: 18px; }
+.os-stage { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0 2px; background: radial-gradient(closest-side, var(--surface-2), transparent); }
+.os-sub { font-size: 13.5px; color: var(--muted); }
+.os-talk[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.os-sec { display: flex; flex-direction: column; gap: 10px; }
+.os-h { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--fg); }
+.os-h small { font-weight: 400; color: var(--muted); font-size: 12.5px; flex: 1; }
+.os-h .os-rand { margin-left: auto; }
+.os-colors { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.os-slot { position: relative; }
+.os-sw { position: relative; display: block; width: 48px; height: 48px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), 0 0 0 1px var(--border); cursor: pointer; overflow: hidden; }
+.os-sw input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+.os-sw:focus-within { box-shadow: var(--focus); }
+.os-rm { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; border: 0; display: grid; place-items: center; background: var(--surface); color: var(--fg); box-shadow: 0 0 0 1px var(--border), var(--shadow-1); }
+.os-rm .ic { width: 12px; height: 12px; }
+.os-add { width: 48px; height: 48px; border-radius: 50%; border: 1.5px dashed var(--border-strong); background: transparent; color: var(--muted); display: grid; place-items: center; }
+.os-add:hover { color: var(--accent); border-color: var(--accent); }
+.os-add[hidden] { display: none; }
+.os-pal { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 4px; margin: 0 -2px; touch-action: pan-x; }
+.os-pal::-webkit-scrollbar { display: none; }
+.os-pal-b { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; padding: 4px; border-radius: 12px; color: var(--muted); }
+.os-pal-b:hover { background: var(--surface-2); color: var(--fg); }
+.os-pal-b small { font-size: 11.5px; }
+.os-strip { display: flex; width: 64px; height: 28px; border-radius: 999px; overflow: hidden; box-shadow: 0 0 0 1px var(--border); }
+.os-strip i { flex: 1; }
+.os-styles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.os-style { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); font-size: 12px; color: var(--fg-2); min-height: 44px; }
+.os-style[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent); color: var(--fg); font-weight: 600; }
+.os-sl { gap: 14px; }
+@media (max-width: 400px) { .os-style span { font-size: 11px; } }
+
+/* ---------- offers after create / clone ---------- */
+.offer-dlg { width: min(440px, 100%); }
+.offer { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 4px 0 2px; }
+.offer h3 { font-size: 20px; margin-top: 4px; }
+.offer p { color: var(--muted); font-size: 14px; max-width: 340px; margin-bottom: 6px; }
+.offer .btn.block { width: 100%; }
+
+/* ---------- intro / onboarding ---------- */
+html.intro-open .toasts { z-index: 210; }
+/* the intro itself is the trailer: styles in ui/intro/trailer.css (lazy chunk) */
+
+button.acct-link { width: 100%; background: transparent; text-align: left; }

@@ -1,0 +1,249 @@
+/* Strix tour: a dark stage (whatever the app theme) with real, small app panels floating in 3D. The panels keep the
+   app's own tokens (light or dark theme); the stage chrome is quiet: step dots, Skip, narration, Skip this / Next.
+   Also the app's "rise in" after the tour (html.intro-reveal). */
+.tour {
+  --tr-fg: #f4f2fb; --tr-dim: rgb(244 242 251 / .62); --tr-glass: rgb(255 255 255 / .09);
+  --tr-ease: cubic-bezier(.2, .7, .2, 1);
+  position: fixed; inset: 0; z-index: 200; overflow: hidden; background: #05050c; color: var(--tr-fg);
+  font-family: var(--font); -webkit-tap-highlight-color: transparent; animation: tuIn .4s ease both;
+}
+.tour.kb { bottom: auto; height: var(--vvh, 100%); }
+@keyframes tuIn { from { opacity: 0; } }
+.tour.pending { visibility: hidden; }
+.tour.leaving { background: transparent; pointer-events: none; }
+.tour.leaving > :not(.tu-canvas) { opacity: 0 !important; transition: opacity .18s ease; }
+.tour.fade { animation: tuFade .3s ease forwards; }
+@keyframes tuFade { to { opacity: 0; } }
+.tu-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; }
+.tu-canvas.front { z-index: 2; pointer-events: none; }
+.tu-world { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.tour.gated .tu-world { visibility: hidden; }
+
+/* ---------- panels: real app markup, app tokens ---------- */
+.tu-panel { position: absolute; left: 0; top: 0; transform-origin: 0 0; display: flex; flex-direction: column; gap: 12px; pointer-events: auto;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 24px; overflow: hidden; box-sizing: border-box;
+  box-shadow: 0 40px 90px -20px rgb(0 0 0 / .65), 0 0 0 1px rgb(255 255 255 / .04); backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  font-size: 15px; line-height: 1.4; text-align: left; user-select: none; -webkit-user-select: none; contain: layout style; }
+.tu-panel[hidden] { display: none; }
+.tu-panel[inert] { pointer-events: none; }
+.tour.reduced .tu-panel { transition: opacity .3s ease; }
+.tu-ph { display: flex; align-items: center; gap: 10px; height: 52px; flex-shrink: 0; padding: 0 16px; border-bottom: 1px solid var(--border); font-size: 16px; }
+.tu-ph b { font-weight: 650; letter-spacing: -.01em; }
+.tu-ph-ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.tu-ph-ic svg { width: 17px; height: 17px; }
+.tu-slot { display: inline-block; width: var(--s); height: var(--s); border-radius: 50%; flex-shrink: 0; }
+
+/* chat */
+.tu-chat { gap: 0; }
+.tu-who { display: flex; align-items: center; gap: 2px; padding: 10px 16px 0; font-size: 15px; font-weight: 650; color: var(--fg); }
+.tu-who-c { display: contents; color: var(--muted); } .tu-who-c svg { width: 16px; height: 16px; }
+.tu-cstage { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 4px 18px 6px; overflow: hidden; }
+.tu-cstage .caps { height: 100%; gap: 8px; }
+.tu-cstage .cap-b { font-size: 18px; line-height: 1.4; }
+.tu-chat .vx-you { margin-bottom: 2px; font-size: 13px; }
+.tu-orbrow { display: flex; justify-content: center; padding: 2px 0; }
+.tu-status { min-height: 26px; padding-top: 2px; font-size: 12.5px; }
+.tu-chips { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; padding: 0 12px 8px; }
+.tu-chip { height: 32px; color: var(--fg-2); background: var(--surface); }
+.tu-chip span { display: inline !important; }
+.tu-barwrap { padding: 0 10px 12px; }
+.tu-bar .vx-input { font-size: 15px; min-height: 40px; padding: 9px 4px; }
+.tu-bar .vx-mic, .tu-bar .vx-send { width: 40px; height: 40px; }
+
+/* tts */
+.tu-tts > :not(.tu-ph), .tu-vc > :not(.tu-ph) { margin-inline: 14px; }
+.tu-vp { min-height: 54px; cursor: default; }
+.tu-editor { flex-shrink: 0; }
+.tu-ttxt { font-size: 17px; line-height: 1.6; padding: 14px 16px 10px; min-height: 118px; color: var(--fg); white-space: pre-wrap; overflow-wrap: break-word; }
+.tu-ttxt mark.tg { background: var(--tag-bg); color: var(--tagc); border-radius: 5px; box-shadow: 0 0 0 1.5px var(--tag-bg); font-weight: inherit; }
+.tu-ttxt mark.tg.new { animation: tuTag .7s var(--tr-ease) both; }
+.tu-ttxt mark.tg.new:nth-of-type(2) { animation-delay: .18s; }
+.tu-ttxt mark.tg.new:nth-of-type(3) { animation-delay: .36s; }
+@keyframes tuTag { from { opacity: 0; filter: blur(5px); background: transparent; } 40% { opacity: 1; } }
+.tu-fx.busy { opacity: .75; }
+.tu-fx:disabled { opacity: 1; }
+.tu-note { margin-top: -2px; }
+.tu-tts, .tu-vc { padding-bottom: 16px; }
+.tu-panel .tu-play { width: auto; }
+
+/* voice changer */
+.tu-recp { min-height: 0; padding: 18px 14px 14px; gap: 6px; }
+.tu-rec { width: 72px; height: 72px; }
+.tu-rec svg { width: 28px; height: 28px; }
+.tu-rectime { margin-top: 4px; font-size: 14.5px; }
+.tu-ab { display: flex; flex-direction: column; gap: 8px; }
+.tu-mp { gap: 10px; padding: 9px 12px 9px 9px; }
+.tu-mp .mp-btn { width: 40px; height: 40px; }
+.tu-prog { height: 4px; border-radius: 4px; background: var(--surface-3); overflow: hidden; margin-top: 6px; }
+.tu-prog i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; }
+.tu-mp.playing { border-color: var(--accent); }
+.tu-mp.nudge { animation: tuNudge 1s var(--tr-ease) 2; }
+@keyframes tuNudge { 40% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 35%, transparent); } }
+
+/* voices */
+.tu-voices { gap: 10px; }
+.tu-search { margin: 0 14px; position: relative; flex: none; }
+.tu-search .input { pointer-events: none; height: 42px; padding-left: 40px; }
+.tu-search > svg { position: absolute; left: 13px; top: 12px; width: 18px; height: 18px; color: var(--faint); transform: none; pointer-events: none; }
+.tu-sea { flex: 1; min-height: 0; margin: 0 8px; border-radius: 18px; cursor: pointer; touch-action: none;
+  background: radial-gradient(120% 90% at 50% 40%, var(--surface-2), transparent 75%); }
+.tu-seabar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 14px; min-height: 36px; }
+.tu-now { font-size: 13.5px; font-weight: 600; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tu-collw { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px 14px; border-top: 1px solid var(--border); }
+.tu-collw .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tu-coll { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ---------- voices: the voice map (map.ts) ---------- */
+.tu-map { position: absolute; inset: 0; z-index: 2; touch-action: none; cursor: grab; outline: none; -webkit-user-select: none; user-select: none; }
+.tu-map:active { cursor: grabbing; }
+.tu-map[hidden], .tu-mhud[hidden] { display: none; }
+.tu-map:focus-visible { box-shadow: inset 0 0 0 2px rgb(255 255 255 / .35); }
+.tu-mhud { position: absolute; inset: 0; z-index: 3; pointer-events: none; transition: opacity .3s ease; }
+.tu-mhud > :not(.tu-mcl):not(.tu-mlabel):not(.sr-only) { pointer-events: auto; }
+.tu-mgroup { position: absolute; left: 12px; top: calc(var(--mtop, 54px) + 4px); display: flex; padding: 3px; gap: 2px; border-radius: 999px;
+  background: rgb(10 12 24 / .55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08); }
+.tu-mgroup button { appearance: none; border: 0; background: none; color: var(--tr-dim); font: inherit; font-size: 13px; font-weight: 600; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer; }
+.tu-mgroup button[aria-checked="true"] { background: rgb(255 255 255 / .92); color: #0b0b12; }
+.tu-mini { position: absolute; right: 12px; top: calc(var(--mtop, 54px) + 4px); width: 72px; height: 72px; border-radius: 14px; cursor: pointer;
+  background: rgb(10 12 24 / .55); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); touch-action: none; }
+.tu-mzoom { position: absolute; right: 12px; bottom: calc(var(--mbot, 178px) + 112px); display: flex; flex-direction: column; gap: 6px; }
+.tu-mbtn { appearance: none; border: 0; width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; cursor: pointer; color: var(--tr-fg);
+  background: rgb(10 12 24 / .6); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .12); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.tu-mbtn svg { width: 19px; height: 19px; }
+.tu-mbtn:hover { background: rgb(40 44 70 / .75); }
+.tu-minus { width: 15px; height: 2px; border-radius: 2px; background: currentColor; }
+.tu-mcard { position: absolute; left: 12px; right: 12px; bottom: calc(var(--mbot, 178px) + 8px); max-width: 520px; margin: 0 auto; padding: 10px 10px 10px 14px; border-radius: 20px;
+  background: rgb(12 14 28 / .72); backdrop-filter: blur(16px) saturate(1.3); -webkit-backdrop-filter: blur(16px) saturate(1.3); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .1), 0 18px 40px -16px rgb(0 0 0 / .6);
+  display: flex; flex-direction: column; gap: 6px; }
+.tu-mrow { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+.tu-mt { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.tu-mt b { font-size: 17px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tu-mdesc { font-size: 13px; color: var(--tr-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tu-mplay, .tu-madd { appearance: none; border: 0; cursor: pointer; font: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 40px; border-radius: 999px; flex-shrink: 0; }
+.tu-mplay { width: 40px; background: rgb(255 255 255 / .14); color: #fff; }
+.tu-mplay svg, .tu-madd svg { width: 18px; height: 18px; }
+.tu-mplay.loading { animation: tuPulse 1s ease-in-out infinite; }
+@keyframes tuPulse { 50% { opacity: .5; } }
+.tu-madd { padding: 0 14px 0 11px; background: #fff; color: #0b0b12; font-size: 14.5px; font-weight: 650; }
+.tu-mplay:disabled, .tu-madd:disabled { opacity: .45; cursor: default; }
+.tu-mrow2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.tu-mattrs { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; overflow: hidden; max-height: 26px; }
+.tu-mattrs span { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: rgb(255 255 255 / .1); color: rgb(255 255 255 / .82); white-space: nowrap; }
+.tu-mcoll { display: flex; gap: 5px; flex-shrink: 0; }
+.tu-mslot { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px rgb(255 255 255 / .28); display: grid; place-items: center; }
+.tu-mslot.full { box-shadow: none; }
+.tu-mhint { margin: 0; font-size: 12.5px; color: var(--tr-dim); }
+.tu-mcard:not(.empty) .tu-mhint { display: none; }
+.tu-mcard.empty .tu-mplay, .tu-mcard.empty .tu-madd { display: none; }
+.tu-mcl { position: absolute; left: 0; top: 0; display: flex; gap: 6px; align-items: baseline; padding: 4px 10px; border-radius: 999px; white-space: nowrap; opacity: 0;
+  background: rgb(10 12 24 / .45); color: rgb(255 255 255 / .86); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; pointer-events: none; }
+.tu-mcl b { font-weight: 650; }
+.tu-mcl span { color: rgb(255 255 255 / .5); }
+.tu-mlabel { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; display: flex; gap: 6px; align-items: baseline; padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+  background: rgb(10 10 20 / .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 13.5px; color: #fff; opacity: 0; transition: opacity .25s ease; }
+.tu-mlabel.on { opacity: 1; }
+.tu-mlabel span { color: rgb(255 255 255 / .7); }
+.tu-mlabel span:not(:empty)::before { content: "\00B7"; margin-right: 6px; }
+.tour.gated .tu-mhud { visibility: hidden; }
+@media (min-width: 700px) {
+  .tu-mini { width: 96px; height: 96px; }
+  .tu-mzoom { right: 20px; }
+}
+
+/* ---------- labels drawn over the canvas ---------- */
+.tu-flabel, .tu-vlabel { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; white-space: nowrap; opacity: 0; transition: opacity .35s ease; }
+.tu-flabel { font-size: 15px; font-weight: 600; letter-spacing: -.005em; text-shadow: 0 2px 16px rgb(0 0 0 / .6); }
+.tu-flabel.on, .tu-vlabel.on { opacity: 1; }
+.tu-vlabel { display: flex; gap: 6px; align-items: baseline; padding: 6px 12px; border-radius: 999px; background: rgb(10 10 20 / .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  font-size: 13.5px; color: #fff; box-shadow: 0 6px 24px rgb(0 0 0 / .35); }
+.tu-vlabel b { font-weight: 650; }
+.tu-vlabel span { color: rgb(255 255 255 / .7); }
+.tu-vlabel span::before { content: "\00B7"; margin-right: 6px; }
+
+/* ---------- narration: the guide orb (canvas) + one caption line ---------- */
+.tu-narr { position: absolute; left: 0; right: 0; z-index: 3; display: grid; align-items: center; padding: 0 16px 0 var(--gx, 64px); pointer-events: none; }
+.tu-cap, .tu-hint { grid-area: 1 / 1; margin: 0; max-width: 560px; transition: opacity .35s ease; }
+.tu-cap { font-size: 21px; font-weight: 620; line-height: 1.25; letter-spacing: -.015em; text-wrap: balance; }
+.tu-hint { font-size: 14.5px; color: var(--tr-dim); line-height: 1.35; }
+.tour:not(.speaking) .tu-cap { opacity: 0; }
+.tour.speaking .tu-hint, .tour:not(.hint-on) .tu-hint { opacity: 0; }
+.tour[data-step="hello"] .tu-narr, .tour[data-step="outro"] .tu-narr { justify-items: center; text-align: center; padding: 0 16px; }
+.tu-w { display: inline-block; margin-right: .26em; opacity: 0; transform: translateY(.25em); filter: blur(6px); transition: opacity .3s ease, transform .45s var(--tr-ease), filter .35s ease; }
+.tu-w.on { opacity: 1; transform: none; filter: none; }
+
+/* ---------- nav: Skip this / Next (ring = auto-advance) / Start talking ---------- */
+.tu-nav { position: absolute; left: 16px; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 10px; max-width: 620px; margin: 0 auto; }
+.tour.gated .tu-nav, .tour.gated .tu-top > :not(.tu-sound), .tour.gated .tu-narr { visibility: hidden; }
+.tu-nav [hidden] { display: none !important; }
+.tour[data-step="hello"] .tu-nav, .tour[data-step="outro"] .tu-nav { justify-content: center; }
+.tour[data-step="hello"] .tu-next { opacity: .85; }
+.tu-skipstep, .tu-link { appearance: none; border: 0; background: none; color: var(--tr-dim); font: inherit; font-size: 15px; font-weight: 550; padding: 12px 14px; border-radius: 999px; cursor: pointer; }
+.tu-skipstep:hover, .tu-link:hover { color: var(--tr-fg); }
+.tu-next, .tu-start, .tu-gplay { appearance: none; border: 0; cursor: pointer; position: relative; display: inline-flex; align-items: center; gap: 10px; height: 52px; padding: 0 20px 0 24px;
+  border-radius: 999px; background: #fff; color: #0b0b12; font: inherit; font-size: 17px; font-weight: 650; letter-spacing: -.01em; box-shadow: 0 16px 50px -12px rgb(0 0 0 / .6); transition: transform .3s var(--tr-ease); }
+.tu-next:hover, .tu-start:hover, .tu-gplay:hover { transform: scale(1.03); }
+.tu-next:active, .tu-start:active, .tu-gplay:active { transform: scale(.98); }
+.tu-nextic { display: contents; } .tu-nextic svg, .tu-start svg { width: 19px; height: 19px; }
+.tu-start { height: 60px; font-size: 19px; padding: 0 24px 0 30px; }
+.tour :focus-visible { outline: 2px solid rgb(255 255 255 / .85); outline-offset: 3px; }
+.tu-panel :focus-visible { outline: none; box-shadow: var(--focus); }
+.tu-panel .vx-input:focus-visible { box-shadow: none; }
+
+/* ---------- top: sound pill, step dots, Skip tour ---------- */
+.tu-top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 14px; right: 14px; z-index: 4; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; pointer-events: none; }
+.tu-top button { pointer-events: auto; }
+.tu-dots { display: flex; gap: 7px; grid-column: 2; transition: opacity .3s; }
+.tu-dots.off { opacity: 0; }
+.tu-dots i { width: 6px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .3); transition: width .4s var(--tr-ease), background .3s; }
+.tu-dots i.on { width: 20px; background: #fff; }
+.tu-skiptour, .tu-sound { appearance: none; border: 0; color: var(--tr-fg); background: var(--tr-glass); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  font: inherit; cursor: pointer; height: 34px; border-radius: 999px; opacity: .7; transition: opacity .2s, background .2s; }
+.tu-skiptour { grid-column: 3; justify-self: end; padding: 0 15px; font-size: 13.5px; font-weight: 600; }
+.tu-sound { grid-column: 1; grid-row: 1; justify-self: start; padding: 0 13px 0 10px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 7px; opacity: .92; }
+.tu-sound svg { width: 15px; height: 15px; }
+.tu-sound[hidden] { display: none; }
+.tu-skiptour:hover, .tu-sound:hover { opacity: 1; background: rgb(255 255 255 / .16); }
+
+/* ---------- gate: only when the browser needs a tap for sound ---------- */
+.tu-gate { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding: 0 16px max(10vh, 64px); opacity: 0; transition: opacity .5s ease; pointer-events: none; }
+.tour.ask .tu-gate { opacity: 1; pointer-events: auto; }
+.tour:not(.gated) .tu-gate { opacity: 0; pointer-events: none; }
+.tu-gbtns { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.tu-gplay { height: 60px; padding: 0 28px 0 10px; font-size: 19px; }
+.tu-gplayic { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: #0b0b12; color: #fff; }
+.tu-gplayic svg { width: 17px; height: 17px; margin-left: 2px; }
+.tu-gnote { margin: 2px 0 0; font-size: 13px; color: var(--tr-dim); }
+
+.tour.kb .tu-narr, .tour.kb .tu-top, .tour.kb .tu-flabel { display: none; }
+/* keyboard open: Skip this / Next stay reachable, compact, at the top */
+.tour.kb .tu-nav { top: 8px; bottom: auto; left: 12px; right: 12px; }
+.tour.kb .tu-next { height: 38px; font-size: 15px; padding: 0 14px 0 16px; box-shadow: none; }
+.tour.kb .tu-skipstep { padding: 8px 10px; font-size: 14px; }
+/* chat panel fitted to the visible area: header folded, smaller orb, captions keep the rest */
+.tu-chat.kb .tu-ph, .tu-chat.kb .tu-who { display: none; }
+.tu-chat.kb .tu-slot { --s: 64px !important; }
+.tu-chat.kb .tu-cstage { padding-top: 10px; }
+
+@media (min-width: 700px) {
+  .tu-cap { font-size: 25px; }
+  .tu-hint { font-size: 15.5px; }
+  .tu-narr { justify-items: start; }
+}
+@media (max-height: 640px) {
+  .tu-cap { font-size: 18px; }
+  .tu-next, .tu-start, .tu-gplay { height: 46px; font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tu-w, .tu-cap, .tu-hint, .tu-gate, .tu-flabel, .tu-vlabel { transition: none; }
+  .tu-w { transform: none; filter: none; }
+  .tu-ttxt mark.tg.new, .tu-mp.nudge { animation: none; }
+}
+
+/* after the tour: the app rises in behind the flying orb (transform / opacity only: no layout shift) */
+html.intro-reveal .vx-top, html.intro-reveal .topbar, html.intro-reveal .side { animation: trAppDown .46s cubic-bezier(.2, .7, .2, 1) .1s both; }
+html.intro-reveal .vx-stage, html.intro-reveal .view > .screen > :not(.vx) { animation: trAppUp .46s cubic-bezier(.2, .7, .2, 1) .18s both; }
+html.intro-reveal .vx-bottom { animation: trAppUp .46s cubic-bezier(.2, .7, .2, 1) .26s both; }
+html.intro-reveal .tabbar { animation: trAppUp .46s cubic-bezier(.2, .7, .2, 1) .34s both; }
+html.intro-reveal:not(.intro-landed) .vx-orbbtn { opacity: 0; }
+@keyframes trAppUp { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } }
+@keyframes trAppDown { from { opacity: 0; transform: translateY(-10px); filter: blur(4px); } }

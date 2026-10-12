@@ -1,0 +1,104 @@
+/* Design tokens. Light is the default; dark applies via :root[data-theme="dark"] (theme.ts resolves "system"). */
+:root {
+  color-scheme: light;
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+
+  --bg: #f6f6f7;
+  --surface: #ffffff;
+  --surface-2: #f1f1f3;
+  --surface-3: #e7e7ea;
+  --raised: #ffffff;
+  --fg: #16171b;
+  --fg-2: #3f4148;
+  --muted: #676a72;
+  --faint: #9b9ea6;
+  --border: #e4e4e8;
+  --border-strong: #d0d1d6;
+
+  /* one accent */
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-fg: #ffffff;
+  --accent-soft: #eef0ff;
+  --accent-soft-fg: #3730a3;
+
+  --ok: #15803d;
+  --ok-soft: #e7f6ec;
+  --warn: #a15c00;
+  --warn-soft: #fdf3e1;
+  --bad: #c0352b;
+  --bad-soft: #fcebea;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+  --tag: var(--accent);
+  --tag-soft: var(--accent-soft);
+  /* audio tags [..] are always purple (TTS editor, history, intro) */
+  --tagc: #7e22ce;
+  --tag-bg: #f1e4ff;
+
+  --focus: 0 0 0 3px color-mix(in oklab, var(--accent) 32%, transparent);
+  --shadow-1: 0 1px 2px rgba(16, 18, 30, .05);
+  --shadow-2: 0 6px 20px rgba(16, 18, 30, .07), 0 1px 3px rgba(16, 18, 30, .05);
+  --shadow-3: 0 20px 56px rgba(16, 18, 30, .16), 0 4px 12px rgba(16, 18, 30, .06);
+  --scrim: rgba(12, 13, 18, .38);
+
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-full: 999px;
+
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 20px;
+  --fs-2xl: 26px;
+
+  --content-w: 760px;
+  --side-w: 88px;
+  --tb-h: 56px;
+  --tabbar-h: 60px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1013;
+  --surface: #17181c;
+  --surface-2: #1f2025;
+  --surface-3: #2a2b31;
+  --raised: #1d1e23;
+  --fg: #ececf0;
+  --fg-2: #c6c7cd;
+  --muted: #9a9ca6;
+  --faint: #6b6d76;
+  --border: #2a2b31;
+  --border-strong: #3a3b42;
+
+  --accent: #8b8cff;
+  --accent-hover: #a3a4ff;
+  --accent-fg: #0f1030;
+  --accent-soft: #24254a;
+  --accent-soft-fg: #c9caff;
+
+  --ok: #4ccf86;
+  --ok-soft: #14301f;
+  --warn: #e8b04f;
+  --warn-soft: #36290f;
+  --bad: #f2837b;
+  --bad-soft: #3a1b19;
+  --tagc: #d8b4fe;
+  --tag-bg: #3b1d5c;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, .45), 0 1px 3px rgba(0, 0, 0, .35);
+  --shadow-3: 0 24px 64px rgba(0, 0, 0, .6), 0 4px 14px rgba(0, 0, 0, .4);
+  --scrim: rgba(0, 0, 0, .6);
+}

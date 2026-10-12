@@ -1,0 +1,46 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 400 var(--fs-md)/1.55 var(--font);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing: -.015em; }
+h1 { font-size: var(--fs-2xl); }
+h2 { font-size: var(--fs-xl); }
+h3 { font-size: var(--fs-lg); }
+p { margin: 0; }
+a { color: var(--accent); text-decoration: none; }
+code, kbd, .mono { font-family: var(--mono); font-size: .92em; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+input, select, textarea { font: inherit; color: inherit; }
+img, svg { display: block; }
+:focus-visible { outline: none; box-shadow: var(--focus); }
+::selection { background: color-mix(in oklab, var(--accent) 26%, transparent); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); }
+
+.ic { width: 1.15em; height: 1.15em; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; display: inline-block; vertical-align: -.2em; }
+.ic.fill { fill: currentColor; stroke: none; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* horizontal swipes are app gestures (tabs, rows): never let them turn into browser back/forward */
+html { overscroll-behavior: none; }
+.view, .pl-scroll, .conv-scroll, .dlg-b, .vl { overscroll-behavior-x: none; }
+.page { touch-action: pan-y pinch-zoom; }
+.tag-row, .seg, .table-wrap, .tag-row *, .seg *, .table-wrap * { touch-action: auto; }
+

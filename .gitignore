@@ -1,0 +1,19 @@
+node_modules/
+dist/
+web/dist/
+data/
+.env
+*.log
+
+*.err
+*.db
+*.db-shm
+*.db-wal
+.claude/
+.DS_Store
+
+# Intro narration generated with a private voice clone: not published (generate your own with a voice you are allowed to use)
+web/public/intro/t_*.mp3
+web/public/intro/r_*.mp3
+web/public/intro/tts_*.mp3
+web/public/intro/vc_out.mp3
