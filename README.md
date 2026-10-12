@@ -77,7 +77,10 @@ Cloning requires an explicit consent checkbox and is meant for **your own voice 
 - Not tested on real iOS/Android devices or real on-screen keyboards; the layouts were checked in headless Edge with emulated viewports and touch.
 - Full-duplex conversation is a simulation (Scribe Realtime + decision model + TTS), not a native speech-to-speech model. There is roughly a second of delay before the persona yields, and without headphones its own voice can leak back into the mic.
 - ElevenLabs does not expose a hard limit for voice-library slots; the app counts conservatively and returns "slots full" when it thinks the cap is reached.
-- No license has been chosen yet.
+
+## License
+
+[MIT](LICENSE). The license covers this code only: ElevenLabs and OpenRouter terms, and the rights to any voice you clone or use, are your own responsibility.
 
 ## Tech
 
