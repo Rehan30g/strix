@@ -161,7 +161,7 @@ function interruptedNote(cut: { spoken: string; unspoken: string }, hint: 'conti
 
 /** A reply that ends by promising to look something up ("let me check", "bentar, aku cek dulu"). */
 // the persona announces it is ending the call (EN / ID); used only to complete a forgotten end_call tool call
-const HANGUP_RE = /\b(hang(?:ing)? up|i'?m (?:done|out of here|leaving)|we'?re (?:done|finished)|this (?:conversation |call )?is over|i'?m not (?:talking|doing this)(?: to you)?(?: any ?more)?|(?:goodbye|bye) for (?:good|now)|aku (?:tutup|sudah selesai|pergi)|kita selesai|sudah cukup)\b/i;
+const HANGUP_RE = /\b(hang(?:ing)? up|i'?m (?:done|out of here|leaving)|we'?re (?:done|finished)|this (?:conversation |call )?is over|(?:goodbye|bye) for (?:good|now)|aku (?:tutup|sudah selesai|pergi)|kita selesai|sudah cukup)\b/i;
 
 const PROMISE_RE =/\b(let me|lemme|i'?ll|i will|gonna|going to)\s+(quickly\s+|just\s+)?((have|take)\s+(a\s+)?(quick\s+)?(look|peek)|check|double[- ]check|verify|make sure|look it up|look that up|look up|search|find out|google)\b|\blook (that|it) up\b|\b(aku|saya|gue|gw|ku)\s+(cek|cari|carikan|cariin|pastikan|pastiin|lihat|liat)\b|\b(cek|cari|carikan|cariin|pastikan|pastiin)\s+(dulu|bentar)\b/i;
 

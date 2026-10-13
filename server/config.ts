@@ -77,10 +77,10 @@ export const config = {
   // eleven_v4_turbo cannot do speech-to-speech, so the Voice Changer uses one fixed STS model.
   stsModel: /^eleven_[a-z0-9_]{2,40}$/.test(env.ELEVENLABS_STS_MODEL ?? '') ? env.ELEVENLABS_STS_MODEL! : 'eleven_multilingual_sts_v2',
   // ElevenLabs voices every active user may use (admin's account voices), shown as category 'shared'.
-  sharedVoiceIds: env.SHARED_VOICE_IDS !== undefined ? list(env.SHARED_VOICE_IDS) : ['FjsOoJ0RVxWEQK4p2Wzq'],
+  sharedVoiceIds: env.SHARED_VOICE_IDS !== undefined ? list(env.SHARED_VOICE_IDS) : ['FjsOoJ0RVxWEQK4p2Wzq', 'roYauZ4bOLAKvVZTPLre'],
   // Display names that override the ElevenLabs account name (GET /voices and the library).
   // SHARED_VOICE_NAMES = JSON {"<id>":"Name"} or a list "id:Name,id2:Name 2".
-  sharedVoiceNames: env.SHARED_VOICE_NAMES !== undefined ? voiceNames(env.SHARED_VOICE_NAMES) : { FjsOoJ0RVxWEQK4p2Wzq: 'Strix' } as Record<string, string>,
+  sharedVoiceNames: env.SHARED_VOICE_NAMES !== undefined ? voiceNames(env.SHARED_VOICE_NAMES) : { FjsOoJ0RVxWEQK4p2Wzq: 'Strix', roYauZ4bOLAKvVZTPLre: 'Lena' } as Record<string, string>,
   maxTtsConcurrent: int(env.ELEVENLABS_MAX_CONCURRENT, 3) || 3,
   // Speech-to-text (ElevenLabs Scribe Realtime, browser connects directly with a single-use token)
   sttModel: 'scribe_v2_realtime',

@@ -65,7 +65,7 @@ POST/PUT/DELETE with an `Origin` header must match `PUBLIC_URL`'s origin, the re
 - `GET /api/config` -> `{defaultModel, decisionModel, ttsModel, stsModel, limits:{llmReqPerDay, ttsCharsPerDay, maxClones, maxCloneUploadMb, maxCloneFiles, maxCollection, vcSecPerDay, maxVcUploadMb, vcMaxSec, sttSecPerDay, sttMaxSessionSec, ttsMaxChars, ttsGenerateMaxChars, settingsMaxBytes, searchPerDay, searchesPerTurn, decidePerDay, decidePerMin}}`
   (limits are the caller's effective limits incl. admin overrides). The model names are informational only.
   **REMOVED** `models:[...]`.
-- `GET /api/characters` -> **plain array** with exactly ONE universal built-in persona, **Strix**:
+- `GET /api/characters` -> **plain array** with two built-in personas, **Strix** (id `strix`) and **Lena** (id `lena`, voice `roYauZ4bOLAKvVZTPLre` = library voice "Lena - Engaging and Relatable Mom", female / middle-aged / Canadian, added to the ElevenLabs account and listed in the default `SHARED_VOICE_IDS`). Lena is a dry, quick, tired-funny Canadian woman, fluent rather than hesitant; Strix and Lena are enemies (a former co-hosted radio show), each tells it from their own side. The shape below is Strix's; Lena has the same fields:
   `[{id:'strix', nick:'Strix', role:'Warm, slightly awkward companion', name:'Strix', description, emoji:'', voiceId:'FjsOoJ0RVxWEQK4p2Wzq', accent:'Australian', mirrorLanguage:true, alwaysTags:true, greeting}]`
   **Fully renamed to `Strix`**: display name and `id` are both `strix` (the id used to be `'stripe'`; the server still accepts
   `characterId:'stripe'` as an alias and the web client migrates saved settings and logs from the old id on first load). Show `name`/`nick`
