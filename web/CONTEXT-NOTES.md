@@ -178,7 +178,10 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   panggilan", "Memanggil X…"). Same DuplexMachine / decide / Captions / player / STT as Chat (Mode Percakapan, push-to-talk, text duplex, cut point
   `interrupted`). Audio strictly sequential (player queue); the next persona's turn is requested as soon as the current line has streamed.
 - Silence: after ~7 s (12 s after a question to the user) the personas fill it (`nudge:'silence'`, max 2 in a row; server caps 4 persona turns).
-- Ringing: `lib/duo.ts duoRing` + `lib/ringtone.ts` (WebAudio, 440+480 Hz, ducked while a voice speaks); the reaction plays with who `ring:<id>`.
+- Ringing: `lib/duo.ts duoRing` + `lib/ringtone.ts` (WebAudio, 440+480 Hz, ducked while a voice speaks). The callee is silent until
+  it answers; `reaction` / `after` are lines of a persona already on the call, played with `sayLine()` (normal `duo:<id>` reply in the queue,
+  its caption colour, added to the transcript). Order: ring starts -> reaction (after any line still playing) -> `rings` rings (at least until
+  the reaction ends + a beat) -> answer (join greeting) or ring stops + "X menolak panggilan" + `after` + "Coba lagi".
 - Leaving: a persona's `{end}` -> it is off the call at once (next turns), its orb fades away after its last line is heard; both gone -> end box.
   "Tinggalkan panggilan" commits every persona (reason `duo`, or `hangup` for one that left, `duo.with`) and flies the Chat persona's orb back.
 - Orb hand-offs are keyed (`ui/transition.ts handOff(el, ttl, key)` / `receiveOrb(target, ms, key)`; `''` = the old single slot, `duo:<id>`).

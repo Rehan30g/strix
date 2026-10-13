@@ -667,7 +667,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   }
   async function openCallPicker() {
     const me = cur;
-    const pick = await pickPersona(ctx, { title: 'Telepon siapa?', rows: personas.filter((x) => x.id !== me?.id).map((x) => ({ p: x })), note: `${me ? `${me.name} tetap di telepon. ` : ''}Yang ditelepon bereaksi dulu, lalu memutuskan mengangkat atau tidak.` });
+    const pick = await pickPersona(ctx, { title: 'Telepon siapa?', rows: personas.filter((x) => x.id !== me?.id).map((x) => ({ p: x })), note: `${me ? `${me.name} tetap di telepon. ` : ''}Yang ditelepon bisa mengangkat, menolak, atau membiarkannya berdering.` });
     if (pick) goCall(pick.p.id, { with: me, fromOrb: pick.orbEl });
   }
 

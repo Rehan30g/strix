@@ -5,8 +5,9 @@
    - Turns: POST /api/duo/turn picks the speaker (server director) and streams ONE persona line; {next} says whether
      another persona follows (requested at once, while the current line is still being spoken = low latency) or the user.
    - Audio strictly sequential (player.ts queue): never two voices at once.
-   - Ringing: POST /api/duo/ring; the callee reacts out loud BEFORE picking up (caption in its colour, synthesized ring
-     tone), then answers / declines / lets it ring. Personas can ring someone themselves ({call} -> ring).
+   - Ringing: POST /api/duo/ring; synthesized ring tone; a persona ALREADY on the call reacts out loud while it rings
+     (its voice and colour); the callee is silent until it answers (then greets via join) / declines / lets it ring
+     (then the reacting persona says its `after` line). Personas can ring someone themselves ({call} -> ring).
    - Memory: per persona, reason 'duo' (or 'hangup' when it left), with the transcript it was there for.
    Route: #/duo?call=strix,lena (ring them) | #/duo?with=<id>&call=<id>[&caller=<id>] (from a solo Chat with <with>). */
 import type { RouteInfo, ScreenCtx } from '../../ctx';
@@ -208,7 +209,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     else if (ringing) {
       const b = h('button', { type: 'button', class: 'btn sm soft', html: S('x') }, h('span', null, 'Batal'));
       b.onclick = () => cancelRing();
-      kids.push(h('span', null, `Memanggil ${nameOf(ringing.id)}…`), b);
+      kids.push(h('span', null, 'Berdering…'), b);
     } else if (retryRing && (s === 'idle' || s === 'listening')) {
       const r = retryRing;
       const b = h('button', { type: 'button', class: 'btn sm soft', html: S('phone') }, h('span', null, 'Coba lagi'));
@@ -545,42 +546,49 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       caps.block('off-' + id, 'event'); caps.show(`${p.name} mematikan teleponnya.`);
       removeSlot(id); paintState(); maybeEnd(); return;
     }
-    // the callee reacts out loud while it rings (its own voice, its colour)
-    if (res.reaction) {
-      const r: Reply = { id: 'g' + Date.now().toString(36), gen, speaker: id, full: res.reaction, chunks: [], pendingCaps: [], block: false, msg: null, streaming: false, cut: false, cancelled: false, end: null, call: null, next: null, userAt: 0, reqAt: performance.now(), heardAt: 0, ring: true, after: [] };
-      replies.push(r);
-      speakChunk(r, res.reaction, 0, r.id + ':0', gen);
-    }
-    // let it ring `rings` times (counted from the start), and never cut the reaction short
+    // while it rings, a persona already on the call reacts (its voice, its colour); the callee stays silent until it picks up
+    if (res.reaction && slots.get(res.reaction.speaker)?.state === 'on') sayLine(res.reaction.speaker, res.reaction.text);
+    // let it ring `rings` times (counted from the start), never cutting the reaction short, then a short beat
     const until = tStart + Math.max(1, res.rings) * RING_MS - 900;
-    while (ringing?.ctrl === ctrl && (performance.now() < until || player.pending > 0)) await sleep(120);
+    while (ringing?.ctrl === ctrl && (performance.now() < until || player.pending > 0 || busy > 0)) await sleep(120);
+    if (ringing?.ctrl !== ctrl) return;
+    await sleep(450);
     if (ringing?.ctrl !== ctrl) return;
     tone.stop(); ringing = null;
+    const by = caller === 'user' ? 'the user' : nameOf(caller);
     if (res.decision === 'answer') {
       s.state = 'on'; s.joinIdx = log.length;
       s.el.classList.add('joined');
       haptic(10);
-      log.push({ role: 'event', content: `${p.name} picked up (called by ${caller === 'user' ? 'the user' : nameOf(caller)}).` });
+      log.push({ role: 'event', content: `${p.name} picked up (called by ${by}).` });
       paintState();
       void requestTurn({ join: { id, caller } });
     } else {
       const text = res.decision === 'decline' ? `${p.name} menolak panggilan.` : `${p.name} tidak menjawab.`;
-      caps.block('miss-' + id, 'event'); caps.show(text);
-      log.push({ role: 'event', content: res.decision === 'decline' ? `${p.name} declined the call from ${caller === 'user' ? 'the user' : nameOf(caller)}.` : `${p.name} did not answer the call from ${caller === 'user' ? 'the user' : nameOf(caller)}.` });
+      caps.block('miss-' + id + tries.get(id), 'event'); caps.show(text);
+      log.push({ role: 'event', content: res.decision === 'decline' ? `${p.name} declined the call from ${by}.` : `${p.name} did not answer the call from ${by}.` });
       s.state = 'declined';
       paintSlots();
       setTimeout(() => { if (slots.get(id)?.state === 'declined') removeSlot(id); }, 1400);
       if (caller === 'user' && (tries.get(id) || 0) < 3) retryRing = { id, text: res.decision === 'decline' ? 'Ditolak.' : 'Tidak dijawab.' };
       else if ((tries.get(id) || 0) >= 3) phoneOff.add(id);
+      // the persona who reacted says what it thinks of that
+      if (res.after && slots.get(res.after.speaker)?.state === 'on') sayLine(res.after.speaker, res.after.text);
       paintState();
       setTimeout(maybeEnd, 1500);
     }
   }
-  function cancelRing() {
+  /** A persona on the call says one line that did not come from /duo/turn (ring reactions): spoken in its turn of the
+      audio queue (never over another voice), captioned in its colour, and part of the transcript (and of its memory). */
+  function sayLine(speaker: string, text: string) {
+    const r: Reply = { id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), gen, speaker, full: text, chunks: [], pendingCaps: [], block: false, msg: null, streaming: false, cut: false, cancelled: false, end: null, call: null, next: null, userAt: 0, reqAt: performance.now(), heardAt: 0, after: [] };
+    replies.push(r);
+    insertMsg(r, { role: 'assistant', speaker, content: text });
+    speakChunk(r, text, 0, r.id + ':0', gen);
+    kick();
+  }  function cancelRing() {
     const r = ringing; if (!r) return;
     r.ctrl.abort(); r.tone.stop(); ringing = null;
-    for (const x of replies) if (x.ring && !x.cancelled) { x.cancelled = true; }
-    if (player.speaker?.startsWith('ring:')) player.stop();
     log.push({ role: 'event', content: `The user hung up before ${nameOf(r.id)} answered.` });
     removeSlot(r.id);
     paintState(); setTimeout(maybeEnd, 400);

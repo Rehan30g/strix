@@ -41,6 +41,9 @@ export async function duoTurn(body: Record<string, unknown>, h: {
   return { speaker, text, next, end, call, json, error };
 }
 
-export interface RingResult { decision: 'answer' | 'decline' | 'ignore' | 'off'; rings: number; reaction: string; attempt: number; maxAttempts?: number; why?: string[]; ms?: number }
+export interface RingLine { speaker: string; text: string }
+/** eaction = a persona already on the call reacting while it rings (null when the user is alone); fter = its line
+    once the call was declined / not answered. The callee itself says nothing before it picks up. */
+export interface RingResult { decision: 'answer' | 'decline' | 'ignore' | 'off'; rings: number; reaction: RingLine | null; after?: RingLine | null; attempt: number; maxAttempts?: number; why?: string[]; ms?: number }
 export const duoRing = (body: Record<string, unknown>, signal?: AbortSignal) =>
   api.raw('/duo/ring', { method: 'POST', json: body, signal, headers: { Accept: 'application/json' } }).then((r) => r.json() as Promise<RingResult>);

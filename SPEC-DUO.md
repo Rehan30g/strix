@@ -40,9 +40,12 @@ Not a phone UI: one shared room, two orbs side by side. Builds on the cross-conv
 - The user calls someone: from Chat ("Telepon…" in ⋮, "Telepon" in a persona's actions, "Panggilan berdua" in the persona sheet) and from the call
   ("Tambah orang"). From a solo chat with A, calling B turns it into A + B + user (A stays on the line, its recent solo lines are context).
 - Ringing in the same room (not a phone UI): the callee's orb waits small at the side, pulsing / shaking, "memanggil…", a soft synthesized ring tone
-  (WebAudio, muted with "Bisukan"), a "Batal" button. The callee reacts out loud BEFORE picking up (`POST /api/duo/ring`: one line in its voice and
-  colour), then answers (its orb grows in and it greets in its mood), declines, or lets it ring. Weighted by relationship, remembered mood, who calls,
-  retries and chance. Declined / unanswered calls are remembered by the callee; "Coba lagi" up to 3 times, then its phone is off for this call.
+  (WebAudio, muted with "Bisukan", ducked under voices), a "Batal" button. While it rings, a persona ALREADY on the call reacts out loud
+  (`POST /api/duo/ring` `reaction`: e.g. Strix when the user calls Lena, "wait, you're calling HER?"; its voice and colour, in turn after any line
+  still playing; the callee's enemy first, else whoever spoke last; nobody when the user is alone; never the persona placing the call). The callee
+  is silent until it picks up: then its orb grows in and it greets in its mood (`/duo/turn` join). Or it declines / lets it ring (weighted by
+  relationship, its remembered mood, who calls, retries and chance): the ring stops, "X menolak panggilan", and the reacting persona says its
+  `after` line. Declined / unanswered calls are remembered by the callee; "Coba lagi" up to 3 times, then its phone is off for this call.
 - Personas can ring someone themselves with the tool `call_persona` (chat and duo), rarely and in character, once per conversation; the call starts
   with that persona as the caller and the user stays on the line.
 - Memory as above, plus missed calls and links (custom personas share news only with personas they have been on a call with).

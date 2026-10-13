@@ -5,11 +5,12 @@
      Events: {speaker} -> {t}... -> {end} (that persona left) / {call} (it phones someone) -> {next} -> [DONE].
      Each persona reply = 1 LLM request (chargeLlm). Caps: DUO_MAX_PERSONA_TURNS per call, 4 persona turns in a row
      without the user, 1 outgoing persona call per call. No web search here.
-   - POST /api/duo/ring (JSON): someone (the user or a persona on the call) rings a persona. The callee reacts BEFORE
-     picking up (one short in-character line, spoken by the client while it rings) and answers / declines / lets it ring.
-     The decision is a weighted roll from the relationship, the callee's remembered mood (memory.ts), who calls, how many
-     times they already tried, and a little chance; the model writes the reaction to fit it. 1 LLM request + 1 call
-     (DUO_MAX_CALLS_PER_DAY). A call not taken is remembered by the callee (memory.ts noteMissed). */
+   - POST /api/duo/ring (JSON): someone (the user or a persona on the call) rings a persona. While it rings, a persona
+     ALREADY on the call reacts out loud (the callee's enemy first, else whoever spoke last; never the caller itself); the
+     callee says nothing until it picks up (then it greets through /duo/turn join). The callee answers / declines / lets it
+     ring by a weighted roll (relationship, its remembered mood, who calls, retries, a little chance); when it does not
+     answer, the reacting persona also gets an `after` line. 1 call (DUO_MAX_CALLS_PER_DAY) + 1 LLM request when someone
+     reacts. A call not taken is remembered by the callee (memory.ts noteMissed). */
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
@@ -357,6 +358,9 @@ const ringBody = z.object({
   force: z.enum(['answer', 'decline', 'ignore']).optional().nullable(),
 });
 
+/** a random angle for the ring reaction, so the same persona does not say the same thing every time */
+const ANGLES = ['a quick dry joke', 'mild panic', 'resigned acceptance', 'pretending not to care', 'a pointed question to the caller', 'curiosity', 'a small memory slipping out', 'bargaining', 'a muttered aside', 'surprise'];
+
 const fail = (reply: FastifyReply, code: number, body: Record<string, unknown>) => reply.code(code).send(body);
 
 /* ---------------- routes ---------------- */
@@ -542,9 +546,8 @@ export async function duoRoutes(app: FastifyInstance) {
     if (callerId !== 'user' && !caller) return fail(reply, 400, { error: 'validation', message: 'caller must be the user or a persona on the call' });
     const st = callState(user.id, b.callId);
     const attempt = (st.rings[callee.id] ?? 0) + 1;
-    if (attempt > 3) return { decision: 'off', rings: 0, reaction: '', attempt: attempt - 1, reason: 'too_many_attempts' };
-    const refundCall = chargeCall(user); // QuotaError -> 429 {error:'quota', kind:'call'}
-    try { chargeLlm(user); } catch (e) { refundCall(); throw e; }
+    if (attempt > 3) return { decision: 'off', rings: 0, reaction: null, after: null, attempt: attempt - 1, reason: 'too_many_attempts' };
+    const refundCall = chargeCall(user); // QuotaError -> 429 {error:'quota', kind:'call'} (the LLM request is charged below, only when someone reacts)
     st.rings[callee.id] = attempt;
     const t0 = Date.now();
 
@@ -568,43 +571,59 @@ export async function duoRoutes(app: FastifyInstance) {
     const eager = pAns > 0.7 && !enemyOn;
     const rings = decision === 'ignore' ? 4 : decision === 'decline' ? 1 + Math.floor(Math.random() * 2) : eager ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 2);
 
-    /* the reaction: one line in the callee's own voice, written to fit the decision */
+    /* the reaction while it rings: NOT the callee (it says nothing before it picks up) but a persona already on the call
+       (the callee's enemy / ex first, else whoever spoke last, else anyone; never the persona who is placing the call).
+       One LLM request writes its line now and, when the call is not taken, the line it says right after. */
     const by = caller ? caller.name : 'the user';
-    const recent = (b.recent ?? []).slice(-6).map((r) => `${oneLine(r.who).slice(0, 40)}: ${tagless(oneLine(r.text)).slice(0, 220)}`).join('\n');
-    const mem = memoryContext(user.id, callee.id, callee.name);
-    const what = decision === 'answer' ? (eager ? 'pick up quickly' : 'pick up, after a moment of reluctance') : decision === 'decline' ? 'decline the call' : 'let it ring and not answer';
-    const lang = callee.mirror ? 'Use the language the user has been speaking (English if unclear).' : !isEnglish(callee.language) ? `Speak ${callee.language}.` : '';
-    const metIds = new Set(connectedTo(user.id, callee.id));
-    const knows = (x: Part) => isEnemy(callee.id, x.id) || (x.kind === 'builtin' && callee.kind === 'builtin') || metIds.has(x.id);
-    const onLine = on.filter((x) => x.id !== caller?.id).map((x) => knows(x) ? x.name : `${x.name} (someone you have never met)`).concat(caller ? ['the user'] : []);
-    const stage = `(Stage direction, not a line of yours. Your phone is ringing and the screen shows who it is: ${caller ? `${caller.name}${knows(caller) ? '' : ', someone you have never met'}` : 'the user (the person you talk with in this app)'} is calling you (nobody else is the caller)${on.length ? `, on a group call with ${onLine.join(' and ') || 'the user'} on the line` : ''}.${attempt > 1 ? ` They already tried ${attempt - 1} time${attempt > 2 ? 's' : ''} just now.` : ''}${recent ? `\nWhat was being said on that call just before (you did not hear it, this is only context): \n${recent}` : ''}
-You have decided to ${what}. Right now, before anything else, you react out loud to yourself while it rings: ONE short line, 3-15 words, with one or two lowercase [audio tags], in character and in your mood toward ${by} (see WHAT YOU REMEMBER). It must fit your decision. You have not picked up, so do not greet or talk to the caller. ${lang}
-Output ONLY a JSON object: {"reaction":"..."})`;
-    const system = callee.system + baseRules(callee.language, callee.mirror) + callee.voiceRules + mem.block
-      + (on.length ? `\n\nPEOPLE ON THAT CALL: ${on.map((x) => isEnemy(callee.id, x.id) ? `${x.name} (your ex and old enemy)` : x.kind === 'builtin' && callee.kind === 'builtin' ? x.name : `${x.name} (${x.bio || 'someone'}; you do not know them personally unless your description says so)`).join('; ')}.` : '');
-    let reaction = '';
-    const ac = abortOnClose(req, reply);
-    try {
-      const r = await openrouter({
-        model: lockedModel(), temperature: 0.95, max_tokens: 120, reasoning: { enabled: false }, response_format: { type: 'json_object' },
-        ...(providerPref() && { provider: providerPref() }), usage: { include: true },
-        messages: [{ role: 'system', content: system }, { role: 'user', content: stage }],
-      }, AbortSignal.any([ac.signal, AbortSignal.timeout(7000)]), 'Strix duo ring');
-      if (r.ok) {
-        const j: any = await r.json();
-        if (j?.usage?.total_tokens) addTokens(user.id, j.usage.total_tokens);
-        const o: any = parseJsonObject(String(j?.choices?.[0]?.message?.content ?? ''));
-        reaction = multiLine(String(o?.reaction ?? '')).replace(/\s+/g, ' ').replace(labelRe([callee]).head, '$1').trim().slice(0, 300);
-      } else await r.text().catch(() => '');
-    } catch { if (ac.signal.aborted) return reply; }
-    if (!reaction) {
-      reaction = decision === 'answer' ? '[sighs] Okay, okay. Fine.' : decision === 'decline' ? '[tired] Not now.' : '[quietly] ...nope.';
-    }
-    let note = '';
+    const recentRows = (b.recent ?? []).slice(-6);
+    const recent = recentRows.map((r) => `${oneLine(r.who).slice(0, 40)}: ${tagless(oneLine(r.text)).slice(0, 220)}`).join('\n');
+    const others = on.filter((x) => x.id !== caller?.id);
+    const lastName = [...recentRows].reverse().map((r) => oneLine(r.who).toLowerCase()).find((w) => others.some((x) => x.name.toLowerCase() === w));
+    const reactor = others.find((x) => isEnemy(x.id, callee.id))
+      ?? others.find((x) => x.name.toLowerCase() === lastName)
+      ?? (others.length ? others[Math.floor(Math.random() * others.length)] : null);
+    let reaction: { speaker: string; text: string } | null = null;
+    let after: { speaker: string; text: string } | null = null;
+    if (reactor) {
+      try { chargeLlm(user); } catch (e) { refundCall(); st.rings[callee.id] = attempt - 1; throw e; }
+      const metIds = new Set(connectedTo(user.id, reactor.id));
+      const rel2 = isEnemy(reactor.id, callee.id) ? `${callee.name} is your ex and old enemy (you know the whole history, see above)`
+        : reactor.kind === 'builtin' && callee.kind === 'builtin' ? `you know ${callee.name} (see above)`
+          : metIds.has(callee.id) ? `you met ${callee.name} once before, on an earlier call with the user`
+            : `you have never met ${callee.name}; all you know: ${callee.bio || 'nothing much'}. React like you would to a stranger being added to a call, outside your own old conflicts`;
+      const rest = on.filter((x) => x.id !== reactor.id && x.id !== caller?.id).map((x) => x.name);
+      const lang = reactor.mirror ? 'Use the language the user has been speaking (English if unclear).' : !isEnglish(reactor.language) ? `Speak ${reactor.language}.` : '';
+      const outcome = decision === 'decline' ? `${callee.name} declined the call` : decision === 'ignore' ? `${callee.name} let it ring and never answered` : '';
+      const stage = `(Stage direction, not a line of yours. You are on a group voice call with the user${rest.length ? ` and ${rest.join(' and ')}` : ''}${caller ? ` and ${caller.name}` : ''}. Right now ${caller ? `${caller.name} is` : 'the user is'} phoning ${callee.name} to add them to this call: it is ringing, ${callee.name} has not picked up and cannot hear you. About ${callee.name}: ${rel2}.${attempt > 1 ? ` This is try number ${attempt}: they already rang ${callee.name} ${attempt - 1} time${attempt > 2 ? 's' : ''} just now.` : ''}${recent ? `\nWhat was just said on this call:\n${recent}` : ''}
+"reaction": what you say out loud right now while it rings, reacting to ${caller ? `${caller.name}` : 'the user'} calling ${callee.name}: ONE short line, 5-15 words, with one or two lowercase [audio tags], in character and in your current mood (your feelings about ${callee.name}; to the user, or muttered). Let it come out as ${ANGLES[Math.floor(Math.random() * ANGLES.length)]}, and do not open with a stock phrase like "oh, come on". Do not talk to ${callee.name}, do not guess whether they will answer, no name label, no narration.${outcome ? `
+"after": then ${outcome}. A second short line, 3-12 words, with one lowercase [audio tag], that you say right after, reacting to that in character (smug, relieved, hurt, amused... whatever is true for you).` : ''} ${lang}
+Output ONLY a JSON object: {"reaction":"..."${outcome ? ',"after":"..."' : ''}})`;
+      const memR = memoryContext(user.id, reactor.id, reactor.name);
+      const system = reactor.system + baseRules(reactor.language, reactor.mirror) + reactor.voiceRules + memR.block;
+      const clean = (v: unknown) => multiLine(String(v ?? '')).replace(/\s+/g, ' ').replace(labelRe([reactor, callee]).head, '$1').trim().slice(0, 300);
+      const ac = abortOnClose(req, reply);
+      try {
+        const r = await openrouter({
+          model: lockedModel(), temperature: 0.95, max_tokens: 160, reasoning: { enabled: false }, response_format: { type: 'json_object' },
+          ...(providerPref() && { provider: providerPref() }), usage: { include: true },
+          messages: [{ role: 'system', content: system }, { role: 'user', content: stage }],
+        }, AbortSignal.any([ac.signal, AbortSignal.timeout(7000)]), 'Strix duo ring');
+        if (r.ok) {
+          const j: any = await r.json();
+          if (j?.usage?.total_tokens) addTokens(user.id, j.usage.total_tokens);
+          const o: any = parseJsonObject(String(j?.choices?.[0]?.message?.content ?? ''));
+          const t1 = clean(o?.reaction), t2 = outcome ? clean(o?.after) : '';
+          if (t1) reaction = { speaker: reactor.id, text: t1 };
+          if (t2) after = { speaker: reactor.id, text: t2 };
+        } else await r.text().catch(() => '');
+      } catch { if (ac.signal.aborted) return reply; }
+      if (!reaction) reaction = { speaker: reactor.id, text: '[sighs] Oh. Okay. We are doing this, then.' };
+      if (outcome && !after) after = { speaker: reactor.id, text: decision === 'decline' ? '[dry] Well. That answers that.' : '[pause] ...nobody home, then.' };
+    }    let note = '';
     if (decision !== 'answer') {
       try { note = noteMissed(user.id, { id: callee.id, name: callee.name }, caller ? { id: caller.id, name: caller.name } : null, decision, why.join(', '), on.filter((x) => x.id !== caller?.id).map((x) => x.name)); } catch (e) { req.log.warn({ err: (e as Error).message }, 'duo: noteMissed failed'); }
     }
-    req.log.info({ userId: user.id, callee: callee.id, caller: callerId, attempt, pAns: +pAns.toFixed(2), roll: +roll.toFixed(2), decision, rings, why, ms: Date.now() - t0 }, 'duo ring');
-    return { decision, rings, reaction, attempt, maxAttempts: 3, p: +pAns.toFixed(2), why, ms: Date.now() - t0, ...(note ? { missed: note } : {}) };
+    req.log.info({ userId: user.id, callee: callee.id, caller: callerId, attempt, pAns: +pAns.toFixed(2), roll: +roll.toFixed(2), decision, rings, why, reactor: reactor?.id ?? null, ms: Date.now() - t0 }, 'duo ring');
+    return { decision, rings, reaction, after, attempt, maxAttempts: 3, p: +pAns.toFixed(2), why, ms: Date.now() - t0, ...(note ? { missed: note } : {}) };
   });
 }

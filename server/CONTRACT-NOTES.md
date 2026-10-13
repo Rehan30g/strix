@@ -263,13 +263,18 @@ The user and 1-`DUO_MAX_PERSONAS` (3) personas on ONE voice call. Personas = bui
     call safety checks: decision model, not charged. No web search in duo. Each persona sees its own prompt + the GROUP CALL block
     (named transcript, who is on the line, very short lines, never a name label) + its own memory block.
 - `POST /api/duo/ring` (JSON). Body: `{callId, callee:Participant, caller:'user'|id (a persona in present), present:[Participant] (on the call now,
-  may be empty), recent?:[{who,text}] (<=10, context only)}`. -> `{decision:'answer'|'decline'|'ignore'|'off', rings:1-4, reaction, attempt,
-  maxAttempts:3, p, why:[..], ms, missed?}`. `reaction` = ONE in-character line with [audio tags] the callee says while it rings (speak it
-  with the callee's voice before it picks up). Decision = weighted roll: user calling 0.86 / persona 0.75; the enemy calling 0.22; the enemy on
+  may be empty), recent?:[{who,text}] (<=10, context only; also used to find who spoke last)}`. -> `{decision:'answer'|'decline'|'ignore'|'off',
+  rings:1-4, reaction:{speaker,text}|null, after:{speaker,text}|null, attempt, maxAttempts:3, p, why:[..], ms, missed?}`.
+  The CALLEE SAYS NOTHING before it picks up (only the ring); after `answer` it greets through `/duo/turn` `join`. `reaction` = ONE line
+  (5-15 words, [audio tags]) by a persona ALREADY on the call, reacting to the call while it rings ("wait, you're calling HER?"), written with
+  that persona's own prompt, memory and relation to the callee: the callee's enemy / ex first, else whoever spoke last (from `recent`), else
+  any; never the persona that is placing the call (it already said "hold on, I'm calling X"). `null` when nobody else is on the call.
+  `after` (only when not answered) = that persona's short line right after the call fails. Speak them in its voice, in turn (never over
+  another voice), and keep both in the transcript (they are part of that persona's conversation / memory). Decision = weighted roll: user calling 0.86 / persona 0.75; the enemy calling 0.22; the enemy on
   the call x0.6; remembered anger/coldness/hurt toward the user (decayed, memory.ts) up to -0.55; warm +; hung up on the user < 3 h -0.2;
   every retry +0.2; then chance. `decline`/`ignore` is remembered by the callee (shared_events kind `missed`, also heard by a persona caller).
-  3 attempts per callee per `callId`, then `{decision:'off'}` (no charge). Cost: 1 LLM request + 1 call (`DUO_MAX_CALLS_PER_DAY` 40, admin
-  override `callPerDay`, 429 `{error:'quota', kind:'call'}`; refunded if the LLM quota check fails). 409 `duo_limit personas` when full.
+  3 attempts per callee per `callId`, then `{decision:'off'}` (no charge). Cost: 1 call (`DUO_MAX_CALLS_PER_DAY` 40, admin override
+  `callPerDay`, 429 `{error:'quota', kind:'call'}`) + 1 LLM request only when someone reacts (the call is refunded if the LLM quota check fails). 409 `duo_limit personas` when full.
   Dev only (`DEV_FAKE_LOGIN`, not production): `force:'answer'|'decline'|'ignore'` for tests.
 - **call_persona tool** (also in `POST /api/chat`): send `callable:[{id,name,description}]` (+ `callsMade` in /chat; duo counts per `callId`).
   The persona may ring ONE of them (never itself / someone on the call), at most once per conversation, rarely and in character (an enemy
