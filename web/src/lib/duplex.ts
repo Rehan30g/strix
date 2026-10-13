@@ -25,7 +25,8 @@ export type DEvent =
   | { type: 'typing'; on: boolean }                       // text box has text + focus while the assistant talks
   | { type: 'submit'; text: string }                      // Enter in the text box
   | { type: 'stop' }                                      // orb tap / Esc / stop button: cut, nothing to send
-  | { type: 'timeout' };                                  // waited too long for the interrupting utterance
+  | { type: 'timeout' }                                   // waited too long for the interrupting utterance
+  | { type: 'release' };                                  // still ducked by a voice that went quiet with nothing left to decide
 
 export type Effect =
   | { type: 'duck' }
@@ -209,6 +210,11 @@ export class DuplexMachine {
       }
       case 'timeout':
         if (s === 'interrupted') { this.state = this.base(); this.resetUtt(); }
+        return [];
+      case 'release':
+        // the duck would otherwise last until the reply ends (its final was dropped as echo / empty, or a decision got
+        // lost): volume back, the utterance is forgotten (not consumed: real words arriving later are judged again)
+        if (s === 'ducked' && this.duckBy === 'voice') { this.state = 'speaking'; this.duckBy = null; this.resetUtt(); return [{ type: 'unduck' }]; }
         return [];
     }
   }

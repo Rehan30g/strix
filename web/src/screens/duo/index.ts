@@ -189,7 +189,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function run(f: Effect) {
     switch (f.type) {
       case 'duck': player.duck(); ringing?.tone.duck(true); haptic(6); break;
-      case 'unduck': player.unduck(); break;
+      case 'unduck': player.unduck(); ringing?.tone.duck(!!player.speaker); break;
       case 'decide': scheduleDecide(f); break;
       case 'cut': cutAll(); break;
       case 'cancel': cancelPending(); break;
@@ -235,6 +235,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     if ((s === 'speaking' || s === 'ducked' || s === 'thinking') && !busy && player.pending === 0 && !ringing) D({ type: 'quiet' });
     if (dm.state === 'idle' || dm.state === 'listening') { if (busy || player.pending > 0) quietSince = performance.now(); } else quietSince = performance.now();
     if (convo && !rec && !convoPaused && started && !ended && !document.hidden && !document.querySelector('.dlg') && (navigator as any).userActivation?.hasBeenActive !== false) startConvo();
+    if (dm.state === 'ducked') duckWatch();
     if (player.pending > 0) caps.tick(player.speechNow(), player.level().amp);
     runAfter();
     maybeNudge();
@@ -242,6 +243,16 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     raf = requestAnimationFrame(loop);
   }
   const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
+  /* duck safety (as in Chat): the duck lasts only while the user really talks / types; the next persona's line never
+     starts under a stale duck (the player asks duckGuard before each chunk and every 500 ms) */
+  const DUCK_QUIET_MS = 2500;
+  const deciding = () => inflight > 0 || !!pendingDecide || !!decideT;
+  const duckWanted = () => dm.state === 'ducked' && (dm.duckBy === 'typing' ? typingNow() : (performance.now() - lastSound < DUCK_QUIET_MS || deciding() || !!hushT));
+  function duckWatch() {
+    if (duckWanted()) return;
+    if (dm.duckBy === 'typing') { typingWas = false; D({ type: 'typing', on: false }); } else D({ type: 'release' });
+  }
+  player.duckGuard = duckWanted;
 
   /* ================= speaking ================= */
   function blockFor(r: Reply) {
@@ -709,7 +720,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         const id = openUtt();
         if (dm.state === 'speaking') D({ type: 'voice', utt: id });
         if (hushT) clearTimeout(hushT);
-        hushT = setTimeout(() => { hushT = null; if (uttId === id && !uttHasText) { D({ type: 'hush', utt: id }); uttId = 0; } }, 1400);
+        hushT = setTimeout(() => {
+          hushT = null;
+          if (uttId === id && !uttHasText) { D({ type: 'hush', utt: id }); uttId = 0; }
+          else if (uttId !== id && dm.utt === id && !dm.uttText) D({ type: 'hush', utt: id });   // its (empty / echo) final came first
+        }, 1400);
       }
     } else if (loudSince && now - lastLoud > 350) { loudSince = 0; voiceFired = false; }
   }
@@ -725,9 +740,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     t = t.trim();
     const id = uttId || ++uttSeq;
     uttId = 0; uttHasText = false;
-    if (!t) return;
-    if (echoWindow() && isEcho(t, echoRef())) return;
-    if (performance.now() - lastSound > 5000) return;
+    // a final that is dropped ends the utterance that ducked the line: volume back now
+    const dropped = () => { if (dm.state === 'ducked' && dm.duckBy === 'voice' && dm.utt === id && !deciding()) D({ type: 'release' }); };
+    if (!t) { dropped(); return; }
+    if (echoWindow() && isEcho(t, echoRef())) { dropped(); return; }
+    if (performance.now() - lastSound > 5000) { dropped(); return; }
     D({ type: 'final', utt: id, text: t });
   }
   function startConvo() {
@@ -920,6 +937,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       if (!ended) commitAll();
       ended = true;
       stopAll();
+      if (player.duckGuard === duckWanted) player.duckGuard = null;
       clearInterval(clockT); clearInterval(barT); clearTimeout(warmT); if (intT) clearTimeout(intT); if (hushT) clearTimeout(hushT); if (youT) clearTimeout(youT);
       if (raf) cancelAnimationFrame(raf);
       removeEventListener('keydown', onKey, true); removeEventListener('pagehide', onPageHide);

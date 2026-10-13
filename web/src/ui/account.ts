@@ -3,7 +3,7 @@
 import { h, avatar, fmtNum, onDisconnect } from './dom';
 import { svg } from '../icons';
 import { modal } from './overlay';
-import { seg, tuneControls } from './controls';
+import { seg, switchRow, tuneControls } from './controls';
 import { store } from '../store';
 import { api, resetText, type Me } from '../api';
 import { settings } from '../settings';
@@ -42,6 +42,10 @@ export function openAccount(onLogout: () => void): void {
   const theme = seg<'system' | 'light' | 'dark'>([['system', 'Sistem', 'monitor'], ['light', 'Terang', 'sun'], ['dark', 'Gelap', 'moon']], themePref(),
     (v) => { setTheme(v); settings.setPrefs({ theme: v }); }, 'Tema', true);
 
+  const level = switchRow('Samakan volume suara', settings.prefs().levelVoices !== false, (v) => { settings.setPrefs({ levelVoices: v }); },
+    'Suara yang pelan dikeraskan dan yang keras dipelankan agar volumenya setara, tanpa menghilangkan bisikan atau teriakan.');
+  level.classList.add('acct-level');
+
   const adv = h('details', { class: 'disclosure' },
     h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Kestabilan, kemiripan, gaya, kecepatan')),
     h('div', { class: 'disc-b stack' }, tuneControls({ compact: true })));
@@ -55,6 +59,7 @@ export function openAccount(onLogout: () => void): void {
       h('div', { class: 'who' }, h('b', null, me.user.name || 'Pengguna'), h('span', null, me.user.email))),
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Kuota hari ini'), reset ? h('small', null, `reset ${reset}`) : null), quota),
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Tema')), theme),
+    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Suara')), level),
     adv,
     introLink,
     adminLink,

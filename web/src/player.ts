@@ -7,9 +7,16 @@
    - speechNow(): progress (0..1) inside the chunk currently playing, for text typed in sync with speech
    - optional "cheap microphone" FX + analyser (level()) via Web Audio, initialised lazily
    - duck()/unduck(): lower / restore the output volume (full-duplex chat: the user starts talking)
-   - fadeStop(): short fade (< 150 ms) then stop() (an interruption must not click) */
+   - fadeStop(): short fade (< 150 ms) then stop() (an interruption must not click)
+   - auto-leveling (lib/leveler.ts, account setting "Samakan volume suara"): every clip is measured while it plays and
+     brought to about -20 LUFS (per-voice memory + partial correction of tags), peak limiter at the end of the chain.
+     Graph: element -> leveler gain -> (dry | cheap-mic FX) -> master (duck / mute / fade) -> limiter -> out -> speakers.
+     Line noise, keep-alive and the ring tone (own context) do not go through the leveler or the limiter.
+   - duck safety: a duck is released when the screen's duckGuard() says nobody is talking any more (checked at each
+     chunk start and every 500 ms while ducked); test hook window.__player() (read-only) */
 import { api, type Tune } from './api';
 import { tune as savedTune } from './settings';
+import { Leveler, makeLimiter, levelingOn, onLevelingChange } from './lib/leveler';
 
 export type PlayerMode = 'stream' | 'full' | 'simple';
 export type FxLevel = 'light' | 'medium' | 'strong';
@@ -54,7 +61,7 @@ function satCurve(k: number): Float32Array<ArrayBuffer> {
   return c;
 }
 
-interface FxGraph { dry: GainNode; wet: GainNode; hp: BiquadFilterNode; lp: BiquadFilterNode; pk: BiquadFilterNode; ws: WaveShaperNode; ng: GainNode; kg: GainNode; master: GainNode }
+interface FxGraph { dry: GainNode; wet: GainNode; hp: BiquadFilterNode; lp: BiquadFilterNode; pk: BiquadFilterNode; ws: WaveShaperNode; ng: GainNode; kg: GainNode; master: GainNode; lim: { input: GainNode; output: GainNode }; out: GainNode }
 
 export class Player {
   readonly el: HTMLAudioElement;
@@ -86,11 +93,18 @@ export class Player {
   private previewing = false;
   private duckTo = 1;
   private fadeT: ReturnType<typeof setTimeout> | null = null;
+  private lev: Leveler | null = null;
+  /** Set by a screen that ducks (Chat / Duo): true while the duck is still wanted (the user is talking or typing).
+      Without a guard a duck never outlives the chunk it was made in. */
+  duckGuard: (() => boolean) | null = null;
+  private duckW: ReturnType<typeof setInterval> | null = null;
+  readonly duckLog: Array<{ ev: string; to: number; at: number }> = [];
 
   constructor() {
     this.el = new Audio();
     this.el.preload = 'auto';
-    this.el.addEventListener('ended', () => { if (this.previewing) { this.previewing = false; this.who = null; this.emit('change'); } });
+    this.el.addEventListener('ended', () => { if (this.previewing) { this.previewing = false; this.who = null; this.lev?.end(); this.emit('change'); } });
+    onLevelingChange((on) => this.applyLeveling(on));
   }
 
   /* ---------- state ---------- */
@@ -124,7 +138,8 @@ export class Player {
     const c = this.cancel; this.cancel = null; c?.();
     this.el.pause(); this.el.removeAttribute('src'); this.el.load();
     if (this.plain && !this.plain.paused) this.plain.pause();
-    this.setGain(1, 0);
+    this.lev?.end();
+    this.setGain(1, 0); this.stopDuckWatch();
     this.emit('change');
   }
 
@@ -134,6 +149,7 @@ export class Player {
   /** current output gain target (1 = normal) */
   get gainTarget(): number { return this.duckTo; }
   private setGain(v: number, sec: number) {
+    if (v !== this.duckTo) { this.duckLog.push({ ev: 'gain', to: v, at: Math.round(performance.now()) }); if (this.duckLog.length > 80) this.duckLog.shift(); }
     this.duckTo = v;
     const out = this.mute ? 0 : v;
     const f = this.fxg, a = this.actx;
@@ -148,9 +164,24 @@ export class Player {
   setMuted(on: boolean): void { this.mute = on; this.setGain(this.duckTo, 0.08); }
   get muted(): boolean { return this.mute; }
   /** Lower the volume quickly (default -14 dB in 60 ms). */
-  duck(to = 0.2, sec = 0.06): void { if (this.fadeT) return; this.setGain(to, sec); }
+  duck(to = 0.2, sec = 0.06): void {
+    if (this.fadeT) return;
+    this.setGain(to, sec);
+    if (!this.duckW) this.duckW = setInterval(() => this.checkDuck('watchdog'), 500);
+  }
   /** Restore the volume. */
-  unduck(sec = 0.25): void { if (this.fadeT) return; this.setGain(1, sec); }
+  unduck(sec = 0.25): void { if (this.fadeT) return; this.setGain(1, sec); this.stopDuckWatch(); }
+  private stopDuckWatch() { if (this.duckW) { clearInterval(this.duckW); this.duckW = null; } }
+  /** A duck nobody asks for any more (the user stopped talking, a decision got lost...) is released. */
+  private checkDuck(why: string) {
+    if (this.duckTo >= 1) { this.stopDuckWatch(); return; }
+    if (this.fadeT) return;                                  // fading out: stop() restores the gain
+    let keep = false;
+    try { keep = !!this.duckGuard && this.duckGuard(); } catch { keep = false; }
+    if (keep) return;
+    this.duckLog.push({ ev: 'release:' + why, to: 1, at: Math.round(performance.now()) });
+    this.setGain(1, 0.25); this.stopDuckWatch();
+  }
   /** Fade out in `ms` (default 120) and stop everything (queued chunks + requests). */
   fadeStop(ms = 120): Promise<void> {
     if (this.fadeT) clearTimeout(this.fadeT);
@@ -173,7 +204,7 @@ export class Player {
     this._pending++; this.err = ''; this.emit('change');
     let completed = false;
     const run = this.chain
-      .then(async () => { if (gen === this.gen) { completed = await this.play(req, gen, opts); } })
+      .then(async () => { if (gen === this.gen) { completed = await this.play(req, gen, opts, text); } })
       .catch((e: any) => {
         if (gen !== this.gen || e?.code === 'aborted') return;
         this.err = e?.message || String(e); console.warn('TTS:', this.err); this.emit('error', e);
@@ -202,11 +233,13 @@ export class Player {
     return run;
   }
 
-  private async play(req: Promise<Response>, gen: number, opts: SpeakOptions): Promise<boolean> {
+  private async play(req: Promise<Response>, gen: number, opts: SpeakOptions, text = ''): Promise<boolean> {
     const r = await req;
     if (gen !== this.gen) return false;
     if (this.mode !== 'simple') await this.setFx(!!opts.fx);
     if (gen !== this.gen) return false;
+    this.checkDuck('chunk');                                // a new chunk never inherits a stale duck
+    this.lev?.begin(opts.voiceId || null, text);
     this.who = opts.who ?? 'tts'; this.call = !!opts.call; this.meta = opts.meta || null; this.bytes = 0; this.final = false;
     const el = this.el; let url = '';
     let ok = false;
@@ -245,6 +278,7 @@ export class Player {
       }, { once: true });
     });
     if (url) URL.revokeObjectURL(url);
+    if (gen === this.gen) this.lev?.end();
     this.lineOff();
     if (gen === this.gen) { this.who = null; this.call = false; this.meta = null; }
     return ok;
@@ -253,7 +287,7 @@ export class Player {
   /** Play a URL (voice preview) or Blob. Same-origin / blob audio goes through the shared element (so level() works);
       a cross-origin URL is played on a separate plain element that is never connected to Web Audio
       (a MediaElementSource fed by a CORS-restricted file only outputs zeroes). Stops anything queued. */
-  async playUrl(src: string | Blob, who = 'preview'): Promise<void> {
+  async playUrl(src: string | Blob, who = 'preview', opts: { level?: string | null } = {}): Promise<void> {
     this.stop();
     const gen = this.gen;
     this.previewing = true; this.who = null;
@@ -270,6 +304,7 @@ export class Player {
     }
     if (this.mode !== 'simple') await this.setFx(false);   // same-origin: analyser gives level() for the orb
     if (gen !== this.gen) return;                 // stopped meanwhile
+    this.lev?.begin(opts.level !== undefined ? opts.level : levelKeyFor(src, who));
     this.who = who;
     this.el.src = url;
     try { await this.el.play(); } catch (e) { this.previewing = false; this.who = null; this.emit('change'); throw e; }
@@ -304,7 +339,7 @@ export class Player {
   latency(): number {
     const a = this.actx as (AudioContext & { outputLatency?: number }) | null;
     if (!a) return 0;
-    return Math.min(0.4, (a.baseLatency || 0) + (a.outputLatency || 0));
+    return Math.min(0.4, (a.baseLatency || 0) + (a.outputLatency || 0) + (this.lev?.enabled ? 0.006 : 0));   // + limiter look-ahead
   }
 
   /* ---------- Web Audio: FX + analyser ---------- */
@@ -323,10 +358,16 @@ export class Player {
       const pk = actx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 1800; pk.Q.value = 1;
       const ws = actx.createWaveShaper(); ws.oversample = '2x';
       const comp = actx.createDynamicsCompressor();
-      const an = actx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.55; src.connect(an);
-      const master = actx.createGain(); master.gain.value = this.mute ? 0 : this.duckTo; master.connect(actx.destination);
-      src.connect(dry); dry.connect(master);
-      src.connect(hp); hp.connect(lp); lp.connect(pk); pk.connect(ws); ws.connect(comp); comp.connect(wet); wet.connect(master);
+      const lev = new Leveler(actx, src);
+      const pre = lev.gain;                       // leveled signal: feeds the analyser (level() = what is heard), dry and FX
+      const an = actx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.55; pre.connect(an);
+      const master = actx.createGain(); master.gain.value = this.mute ? 0 : this.duckTo;
+      const lim = makeLimiter(actx);
+      const out = actx.createGain(); out.connect(actx.destination);
+      lim.output.connect(out);
+      if (lev.enabled) master.connect(lim.input); else master.connect(out);
+      pre.connect(dry); dry.connect(master);
+      pre.connect(hp); hp.connect(lp); lp.connect(pk); pk.connect(ws); ws.connect(comp); comp.connect(wet); wet.connect(master);
       const nb = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate), d = nb.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       const ns = actx.createBufferSource(); ns.buffer = nb; ns.loop = true;
@@ -335,10 +376,39 @@ export class Player {
       const ka = actx.createBufferSource(); ka.buffer = nb; ka.loop = true;
       const kg = actx.createGain(); kg.gain.value = 0; ka.connect(kg); kg.connect(actx.destination); ka.start();
       actx.onstatechange = () => { if (actx.state !== 'running') actx.resume().catch(() => {}); };
-      this.actx = actx; this.an = an;
-      this.fxg = { dry, wet, hp, lp, pk, ws, ng, kg, master };
+      this.actx = actx; this.an = an; this.lev = lev;
+      this.fxg = { dry, wet, hp, lp, pk, ws, ng, kg, master, lim, out };
+      this.el.volume = 1;                         // a duck / mute made before the graph existed went to el.volume
     } catch (e: any) { console.warn('FX tidak tersedia:', e?.message); this.fxg = null; this.actx = null; return false; }
     return true;
+  }
+  /** "Samakan volume suara" switched: leveling gain + limiter in or out (off = the old graph) */
+  private applyLeveling(on: boolean) {
+    const f = this.fxg, lev = this.lev; if (!f || !lev) return;
+    if (lev.enabled === on) return;
+    lev.setEnabled(on);
+    try { f.master.disconnect(); } catch { /* not connected */ }
+    f.master.connect(on ? f.lim.input : f.out);
+  }
+  get leveling(): boolean { return this.lev ? this.lev.enabled : levelingOn(); }
+
+  /** Read-only state for tests (window.__player()): duck / mute / fade / leveler. */
+  debug() {
+    const f = this.fxg, lev = this.lev;
+    return {
+      duckTo: this.duckTo, ducked: this.ducked, muted: this.mute, fading: !!this.fadeT,
+      master: f ? +f.master.gain.value.toFixed(3) : null, elVolume: this.el.volume,
+      speaker: this.who, pending: this._pending, busy: this.busy, guard: !!this.duckGuard, ctx: this.ctxState(),
+      lev: lev ? { on: lev.enabled, db: +lev.currentDb.toFixed(2), gain: +lev.gain.gain.value.toFixed(3), key: lev.clipKey, now: lev.integrated(), log: lev.log.slice(-20) } : null,
+      duckLog: this.duckLog.slice(-30),
+    };
+  }
+  /** Test only: a MediaStream of exactly what goes to the speakers (after duck, leveler and limiter). */
+  tap(): MediaStream | null {
+    if (!this.initFx()) return null;
+    const d = (this.actx as AudioContext).createMediaStreamDestination();
+    this.fxg!.out.connect(d);
+    return d.stream;
   }
   private lineOff() {
     const f = this.fxg, a = this.actx; if (!f || !a) return;
@@ -392,8 +462,16 @@ export class Player {
   }
 }
 
+/** leveler memory key of a URL clip: the tour's static mp3s share one measured level; voice previews 'pv:<voice id>' */
+function levelKeyFor(src: string | Blob, who: string): string | null {
+  if (typeof src === 'string' && /\/intro\/[^/]+\.mp3/.test(src)) return 'static:intro';
+  const m = /^(?:preview|tourmap):(.+)$/.exec(who);
+  return m ? 'pv:' + m[1] : null;
+}
+
 export const player = new Player();
 addEventListener('pagehide', () => player.stop());
+(window as any).__player = () => player.debug();
 
 /* ---------- text chunking helpers (shared by chat / voice / coffee) ---------- */
 const ABBR = /\b(?:Mr|Mrs|Ms|Dr|St|Prof|Sr|Jr|vs|etc)\.$/i;

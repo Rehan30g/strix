@@ -16,11 +16,12 @@ export interface Prefs {
   handsFree: boolean;
   showTags: boolean;
   names: Record<string, string>;   // renamed character nicks, per character id
+  levelVoices: boolean;   // "Samakan volume suara": client-side loudness leveling (lib/leveler.ts)
 }
 
 export const PREFS_DEFAULT: Prefs = {
   theme: 'system', accent: '', lang: 'en', sttLang: 'en-US', voiceId: '',
-  audioTags: true, autoSpeak: true, handsFree: false, showTags: true, names: {},
+  audioTags: true, autoSpeak: true, handsFree: false, showTags: true, names: {}, levelVoices: true,
 };
 export const TUNE_DEFAULT: Tune = { stability: 0.5, similarity: 0.75, style: 0, speed: 1, speakerBoost: false };
 

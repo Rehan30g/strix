@@ -1,19 +1,31 @@
 /* Compact audio player (play/pause, seek bar, time) for local blobs: recorded / uploaded audio and results.
    Only one plays at a time; starting one stops the shared TTS player. With `orb`, the play button is the voice's
-   magic orb, animated by the real loudness of what plays (analyser on the blob audio, same-origin only). */
+   magic orb, animated by the real loudness of what plays (analyser on the blob audio, same-origin only).
+   With `level` (a leveler key, e.g. the Voice Changer result 'vc:<voice id>') the audio is auto-leveled like the TTS
+   player (lib/leveler.ts, "Samakan volume suara"); downloads / recordings / uploads play as they are. */
 import { h, onDisconnect } from './dom';
 import { svg } from '../icons';
 import { player } from '../player';
 import { fmtDur } from '../lib/recorder';
 import { orb as makeOrb, type OrbSpec } from './orb';
+import { Leveler, makeLimiter, onLevelingChange } from '../lib/leveler';
 
 const all = new Set<HTMLAudioElement>();
 export function pauseAllMini(): void { all.forEach((a) => a.pause()); }
 
 /* one shared AudioContext for local playback levels */
 let actx: AudioContext | null = null;
-const analysers = new WeakMap<HTMLAudioElement, { an: AnalyserNode; buf: Uint8Array<ArrayBuffer> }>();
-function analyse(a: HTMLAudioElement): void {
+const analysers = new WeakMap<HTMLAudioElement, { an: AnalyserNode; buf: Uint8Array<ArrayBuffer>; lev: Leveler | null }>();
+let lim: { input: GainNode; output: GainNode } | null = null;
+const leveled = new Set<{ an: AnalyserNode; lev: Leveler }>();
+onLevelingChange((on) => {
+  for (const x of leveled) {
+    x.lev.setEnabled(on);
+    try { x.an.disconnect(); } catch { /* */ }
+    x.an.connect(on && lim ? lim.input : actx!.destination);
+  }
+});
+function analyse(a: HTMLAudioElement, level?: string): void {
   if (analysers.has(a) || !(a.src.startsWith('blob:') || a.src.startsWith(location.origin))) return;   // never cross-origin
   try {
     const AC: typeof AudioContext | undefined = window.AudioContext || (window as any).webkitAudioContext;
@@ -22,8 +34,14 @@ function analyse(a: HTMLAudioElement): void {
     if (actx.state !== 'running') actx.resume().catch(() => {});
     const src = actx.createMediaElementSource(a);
     const an = actx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.5;
-    src.connect(an); an.connect(actx.destination);
-    analysers.set(a, { an, buf: new Uint8Array(512) });
+    let lev: Leveler | null = null;
+    if (level) {
+      lev = new Leveler(actx, src); lev.gain.connect(an);
+      if (!lim) { lim = makeLimiter(actx); lim.output.connect(actx.destination); }
+      an.connect(lev.enabled ? lim.input : actx.destination);
+      leveled.add({ an, lev });
+    } else { src.connect(an); an.connect(actx.destination); }
+    analysers.set(a, { an, buf: new Uint8Array(512), lev });
   } catch { /* level stays 0 */ }
 }
 function levelOf(a: HTMLAudioElement): number {
@@ -35,7 +53,7 @@ function levelOf(a: HTMLAudioElement): number {
 
 export interface MiniPlayer extends HTMLElement { audio: HTMLAudioElement; dispose(): void }
 
-export function miniPlayer(src: Blob | string, opts: { label?: string; sub?: string; accent?: boolean; knownDuration?: number | null; orb?: OrbSpec } = {}): MiniPlayer {
+export function miniPlayer(src: Blob | string, opts: { label?: string; sub?: string; accent?: boolean; knownDuration?: number | null; orb?: OrbSpec; level?: string } = {}): MiniPlayer {
   const url = typeof src === 'string' ? src : URL.createObjectURL(src);
   const a = new Audio(); a.preload = 'metadata'; a.src = url;
   all.add(a);
@@ -63,16 +81,18 @@ export function miniPlayer(src: Blob | string, opts: { label?: string; sub?: str
   btn.onclick = () => {
     if (a.paused) {
       player.stop(); all.forEach((x) => { if (x !== a) x.pause(); });
-      if (ob) analyse(a);
+      if (ob || opts.level) analyse(a, opts.level);
+      const lv = analysers.get(a)?.lev;
+      if (lv && a.currentTime < 0.05) lv.begin(opts.level!);   // a new listen from the start (a resume keeps its clip)
       a.play().catch(() => {});
     } else a.pause();
   };
   range.oninput = () => { seeking = true; range.style.setProperty('--p', (Number(range.value) / 10) + '%'); };
   range.onchange = () => { if (dur) a.currentTime = (Number(range.value) / 1000) * dur; seeking = false; paint(); };
   for (const ev of ['timeupdate', 'play', 'pause', 'ended', 'loadedmetadata', 'durationchange']) a.addEventListener(ev, paint);
-  a.addEventListener('ended', () => { a.currentTime = 0; paint(); });
+  a.addEventListener('ended', () => { analysers.get(a)?.lev?.end(); a.currentTime = 0; paint(); });
   const unP = player.on('change', () => { if (player.busy && !a.paused) a.pause(); });
-  el.dispose = () => { a.pause(); all.delete(a); unP(); ob?.setLive(false); if (typeof src !== 'string') URL.revokeObjectURL(url); };
+  el.dispose = () => { a.pause(); analysers.get(a)?.lev?.end(); all.delete(a); unP(); ob?.setLive(false); if (typeof src !== 'string') URL.revokeObjectURL(url); };
   onDisconnect(el, () => el.dispose());
   paint();
   return el;

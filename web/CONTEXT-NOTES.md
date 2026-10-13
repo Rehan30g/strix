@@ -41,6 +41,18 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   analyser on the blob audio (never cross-origin).
 - `src/player.ts` — `playUrl(src, who)`: same-origin/blob audio through the shared element (level() works); a
   cross-origin URL would go to a separate plain `<audio>` that never touches Web Audio.
+- `src/lib/leveler.ts` — voice auto-leveling ("Samakan volume suara", `prefs.levelVoices`, default on, switch in the
+  account sheet). Each clip is measured while it plays (K-weighting approximation -> AnalyserNode polled every 40 ms, 400 ms
+  windows, EBU-style gating), per-voice usual level = median of the last 9 clips in localStorage `sm2.leveler.v1` (defaults:
+  Strix -21.8, Lena -29.6 LUFS), per-tag usual deviation (`tag:whispers` ...). Gain = (-20 - usual) - 70% of the clip's
+  deviation (tags keep 30%), -8..+12 dB, smooth ramps; unknown voices adapt within ~0.4 s. `makeLimiter()` (-1.5 dBFS) at the
+  end of the player chain. Player graph: element -> leveler gain -> dry|FX -> master (duck/mute/fade) -> limiter -> out.
+  Applies to everything through `player` (Chat, Duo, TTS Studio playback, dialog playback, previews, tour live TTS / map),
+  the Voice Changer result mini player (`miniPlayer({level})`) and the tour's static clips (mastered at -18.4 LUFS ->
+  `staticClipVolume()`); NOT to downloaded-file players, recordings, the ring tone, line noise / keep-alive.
+- Duck safety: `player.duckGuard` (set by Chat / Duo: the user is still talking / typing / a decision is pending) is checked
+  at each chunk start and every 500 ms while ducked; stale ducks are released. DuplexMachine event `release` (voice duck
+  whose final was dropped / went quiet > 2.5 s). Read-only hook `window.__player()` (duck, master, leveler, duckLog).
 - `src/lib/collection.ts` — add/remove library voices (`POST/DELETE /api/voices/collection`), toasts.
   `addVoiceResult(v)` (no toast, returns `{ok, voiceId}` / `{ok:false, code:'slots_full'|'collection_full'|'not_addable'|..., message}`)
   sends `ownerId` for public-library voices; `inCollection(id)` also matches a collection voice's `sourceId`.

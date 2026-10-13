@@ -239,11 +239,22 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     if ((s === 'speaking' || s === 'ducked' || s === 'thinking') && !busy && player.pending === 0) { if (R) R.endedAt = performance.now(); D({ type: 'quiet' }); }
     if (dm.state !== 'idle' && dm.state !== 'listening') lastBusyAt = performance.now();
     if (convo && !rec && !convoPaused && cur && !log.verdict && !document.hidden && !document.querySelector('.dlg') && (navigator as any).userActivation?.hasBeenActive !== false) startConvo();
+    if (dm.state === 'ducked') duckWatch();
     if (uiState() !== shown) paintState();
     if (player.pending > 0) caps.tick(player.speechNow(), chatAmp());
     if (dm.state !== 'idle' || caps.pending() || player.pending > 0) raf = requestAnimationFrame(loop);
   }
   const kick = () => { if (!raf) raf = requestAnimationFrame(loop); };
+  /* duck safety: the duck lasts only while the user really talks / types (a lost final or decision must not leave the
+     reply at -14 dB until it ends); the player asks the same question before each chunk and every 500 ms */
+  const DUCK_QUIET_MS = 2500;
+  const deciding = () => inflight > 0 || !!pendingDecide || !!decideT;
+  const duckWanted = () => dm.state === 'ducked' && (dm.duckBy === 'typing' ? typingNow() : (performance.now() - lastSound < DUCK_QUIET_MS || deciding() || !!hushT));
+  function duckWatch() {
+    if (duckWanted()) return;
+    if (dm.duckBy === 'typing') { typingWas = false; D({ type: 'typing', on: false }); } else D({ type: 'release' });
+  }
+  player.duckGuard = duckWanted;
   // test hooks (read-only): word reveal log, audio clock, machine trace, decisions, the cut point
   (window as any).__caps = caps;
   (window as any).__chatClock = () => { const n = player.speechNow(); return n ? { sid: n.sid, t: n.t, final: n.final, dur: n.dur, amp: player.level().amp } : null; };
@@ -766,7 +777,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         const id = openUtt();
         if (dm.state === 'speaking') D({ type: 'voice', utt: id });
         if (hushT) clearTimeout(hushT);
-        hushT = setTimeout(() => { hushT = null; if (uttId === id && !uttHasText) { D({ type: 'hush', utt: id }); uttId = 0; } }, 1400);
+        hushT = setTimeout(() => {
+          hushT = null;
+          if (uttId === id && !uttHasText) { D({ type: 'hush', utt: id }); uttId = 0; }
+          else if (uttId !== id && dm.utt === id && !dm.uttText) D({ type: 'hush', utt: id });   // its (empty / echo) final came first
+        }, 1400);
       }
     } else if (loudSince && now - lastLoud > 350) { loudSince = 0; voiceFired = false; }
   }
@@ -785,9 +800,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     t = t.trim();
     const id = uttId || ++uttSeq;
     uttId = 0; uttHasText = false;
-    if (!t) return;
-    if (echoWindow() && isEcho(t, echoRef())) { echoLog.push({ text: '(final) ' + t, at: Date.now() }); return; }
-    if (performance.now() - lastSound > 5000) { echoLog.push({ text: '(final, no voice) ' + t, at: Date.now() }); return; }
+    // a final that is dropped ends the utterance that ducked the reply: volume back now
+    const dropped = () => { if (dm.state === 'ducked' && dm.duckBy === 'voice' && dm.utt === id && !deciding()) D({ type: 'release' }); };
+    if (!t) { dropped(); return; }
+    if (echoWindow() && isEcho(t, echoRef())) { echoLog.push({ text: '(final) ' + t, at: Date.now() }); dropped(); return; }
+    if (performance.now() - lastSound > 5000) { echoLog.push({ text: '(final, no voice) ' + t, at: Date.now() }); dropped(); return; }
     lastUserAt = performance.now();
     D({ type: 'final', utt: id, text: t });
     if (dm.state !== 'thinking' && dm.state !== 'ducked') hideYou(1500);
@@ -1261,6 +1278,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     cleanup: () => {
       if (cur) void commitNow('switch', cur, log);   // leaving the Chat screen: remember what was said
       stopAll();
+      if (player.duckGuard === duckWanted) player.duckGuard = null;
       clearInterval(silenceT); clearInterval(barT); if (intT) clearTimeout(intT); if (hushT) clearTimeout(hushT);
       document.removeEventListener('visibilitychange', onVis);
       document.removeEventListener('pointerdown', onGesture, true); document.removeEventListener('keydown', onGesture, true);

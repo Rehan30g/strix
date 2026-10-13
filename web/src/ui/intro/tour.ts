@@ -26,6 +26,7 @@ import { loadCharacters } from '../../store';
 import { player, chunker } from '../../player';
 import { autoTag, bareWords } from '../../lib/autotag';
 import { BRAND } from '../../lib/brand';
+import { staticClipVolume } from '../../lib/leveler';
 import { Stage, type Bg, type Dot, type Rich } from './stage';
 import { clamp, lerp, prog, easeInOutCubic, easeOutCubic, spring, rng } from './kit';
 import { blend, frame, local, matrix, project, view, inQuad, type Place, type Pose, type Rect, type V3 } from './cam';
@@ -273,6 +274,7 @@ export function openTour(opts: TourOpts = {}): void {
       cur = { n, id, who: o.who || 'guide', cap: o.cap !== false, t0: clk, clockOnly, waitAt: clk, res };
       if (cur.cap) startCaps(id);
       if (!clockOnly) {
+        au.volume = staticClipVolume();   // the clips are mastered at -18.4 LUFS; live TTS is leveled to -20
         au.src = urlOf(id);
         try { au.currentTime = 0; } catch { /* */ }
         const p = au.play();

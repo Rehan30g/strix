@@ -182,7 +182,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       h('div', { class: 'step-h' }, h('span', { class: 'step-n ok', html: S('check') }), h('h2', null, 'Hasil')),
       h('div', { class: 'ab' },
         miniPlayer(src.file, { label: 'Asli', sub: src.origin === 'mic' ? 'Rekamanmu' : src.file.name, knownDuration: src.duration }),
-        miniPlayer(r.blob, { label: 'Hasil', sub: v ? v.name.split(' - ')[0] : 'Suara baru', accent: true, orb: voiceOrb(vp.value) })),
+        miniPlayer(r.blob, { label: 'Hasil', sub: v ? v.name.split(' - ')[0] : 'Suara baru', accent: true, orb: voiceOrb(vp.value), level: 'vc:' + vp.value })),
       dl);
   }
 
