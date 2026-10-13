@@ -108,7 +108,14 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   /* ================= personas ================= */
   function buildPersonas() {
     personas = [...chars.map((c) => fromCharacter(c)), ...customPersonas().map(fromCustom)];
+    const had = cur;
     if (cur) cur = personas.find((p) => p.id === cur!.id) || null;
+    // the persona we are talking to was deleted (here or in another tab): stop it and move to another persona
+    if (had && !cur) queueMicrotask(() => {
+      stopAll();
+      history.replaceState(null, '', '#/chat');
+      onRoute({ name: 'chat', path: 'chat', params: new URLSearchParams() });
+    });
   }
   function paintHead() {
     if (!cur) return;
@@ -975,8 +982,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   /* ================= editors ================= */
   async function removePersona(p: Persona) {
     if (!(await ui.confirm({ title: `Hapus "${p.name}"?`, message: 'Persona dan riwayat percakapannya dihapus.', confirm: 'Hapus', danger: true }))) return;
-    deleteCustom(p.id); buildPersonas();
-    if (cur?.id === p.id) { cur = null; history.replaceState(null, '', '#/chat'); onRoute({ name: 'chat', path: 'chat', params: new URLSearchParams() }); }
+    deleteCustom(p.id); buildPersonas();   // if it was the open persona, buildPersonas() moves the chat to another one
     ui.toast('Persona dihapus.', { kind: 'ok' });
   }
   function orbStudio(p: Persona) {
