@@ -12,6 +12,7 @@ export function markOnboarded(): void {
 }
 export const isOnboarded = (): boolean => settings.get<boolean>('onboarded', false) === true;
 
-export function openIntro(opts: { onDone?: () => void } = {}): void {
-  openTour({ onDone: () => { markOnboarded(); opts.onDone?.(); } });
+/** `mandatory`: first-time tour, cannot be skipped. A replay from the account menu stays skippable. */
+export function openIntro(opts: { onDone?: () => void; mandatory?: boolean } = {}): void {
+  openTour({ mandatory: opts.mandatory, onDone: () => { markOnboarded(); opts.onDone?.(); } });
 }

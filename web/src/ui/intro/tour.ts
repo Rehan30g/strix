@@ -34,7 +34,11 @@ import { VoiceMap, loadMapVoices, collOrb, type MapVoice } from './map';
 
 type Word = [string, number, number];
 interface Clip { src: string; dur: number; words: Word[]; tags: Array<[string, number]>; env: number[] }
-export interface TourOpts { onDone?: (how: 'finished' | 'skipped') => void }
+export interface TourOpts {
+  onDone?: (how: 'finished' | 'skipped') => void;
+  /** First-time tour for a new tester: no way to skip the whole tour (Skip tour / gate Skip / Esc are removed). If the tour assets cannot be loaded the Skip link comes back so nobody gets trapped. */
+  mandatory?: boolean;
+}
 
 const reduceMq = matchMedia('(prefers-reduced-motion: reduce)');
 let open = false;
@@ -132,6 +136,8 @@ export function openTour(opts: TourOpts = {}): void {
   const top = h('div', { class: 'tu-top' }, soundBtn, dots, skipTour);
   const gPlay = h('button', { type: 'button', class: 'tu-gplay' }, h('span', { class: 'tu-gplayic', html: S('play') }), h('span', null, 'Take the tour'));
   const gSkip = h('button', { type: 'button', class: 'tu-link' }, 'Skip');
+  const mandatory = !!opts.mandatory;
+  if (mandatory) { skipTour.hidden = true; gSkip.hidden = true; }
   const gate = h('div', { class: 'tu-gate' }, h('div', { class: 'tu-gbtns' }, gPlay, h('p', { class: 'tu-gnote' }, 'a short tour · sound on'), gSkip));
   const root = h('div', { class: 'tour gated pending', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${BRAND} tour` },
     back.canvas, world, front.canvas, ...flabels, vlabel, narr, nav, top, gate);
@@ -935,7 +941,7 @@ export function openTour(opts: TourOpts = {}): void {
   }
   void load().then((ok) => {
     if (!open) return;
-    if (!ok) { root.classList.add('ask'); return; }
+    if (!ok) { gSkip.hidden = false; skipTour.hidden = false; root.classList.add('ask'); return; }  // assets missing: never trap the user
     void unlock().then((can) => { if (!open || started) return; if (can) start(true); else root.classList.add('ask'); });
     setTimeout(() => root.classList.add('ask'), 450);
   });
@@ -954,7 +960,7 @@ export function openTour(opts: TourOpts = {}): void {
     if (leaving) return;
     const k = e.key, tgt = e.target as HTMLElement;
     const inField = tgt?.tagName === 'TEXTAREA' || tgt?.tagName === 'INPUT';
-    if (k === 'Escape') { if (inField) { tgt.blur(); return; } e.preventDefault(); e.stopPropagation(); finish('skipped'); return; }
+    if (k === 'Escape') { if (inField) { tgt.blur(); return; } e.preventDefault(); e.stopPropagation(); if (!skipTour.hidden) finish('skipped'); return; }  // Esc only skips while the skip button is available
     if (!started) { if (k === 'Enter' && tgt?.tagName !== 'BUTTON') { e.preventDefault(); gPlay.click(); } return; }
     if (inField) return;
     // the voice map handles its own keys (arrows pan, +/- zoom, Enter, A)

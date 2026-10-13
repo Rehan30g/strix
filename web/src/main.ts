@@ -52,7 +52,7 @@ async function boot() {
     phase = 'app'; leaveApp(); teardown = mountShell(root, toLogin);
     // first visit: animated intro (decided after the server settings arrive, so another device's "onboarded" counts)
     Promise.race([synced.catch(() => {}), new Promise((r) => setTimeout(r, 2500))]).then(() => {
-      if (phase === 'app' && settings.get<boolean>('onboarded', false) !== true) import('./ui/intro').then((m) => m.openIntro()).catch(() => {});
+      if (phase === 'app' && settings.get<boolean>('onboarded', false) !== true) import('./ui/intro').then((m) => m.openIntro({ mandatory: true })).catch(() => {});
     });
   }
 }
