@@ -157,9 +157,14 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { align
     if (p.anchor === anchor) { if (performance.now() - p.at > 250) p.close(); return p.close; }
     p.close();
   }
-  const menu = h('div', { class: 'menu', role: 'menu' }, content);
+  // phones: the menu opens as a bottom action sheet (within thumb reach) over a scrim
+  const sheet = matchMedia('(max-width: 640px)').matches;
+  const menu = h('div', { class: 'menu' + (sheet ? ' sheet' : ''), role: 'menu' }, content);
+  const scrim = sheet ? h('div', { class: 'menu-scrim', 'aria-hidden': 'true' }) : null;
+  if (scrim) document.body.append(scrim);
   document.body.append(menu);
   const place = () => {
+    if (sheet) return;
     const r = anchor.getBoundingClientRect(), m = menu.getBoundingClientRect();
     const vw = innerWidth, vh = innerHeight;
     let top: number, left: number;
@@ -174,7 +179,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { align
   let closed = false;
   const close = () => {
     if (closed) return; closed = true;
-    menu.remove(); anchor.setAttribute('aria-expanded', 'false');
+    menu.remove(); scrim?.remove(); anchor.setAttribute('aria-expanded', 'false');
     if (openPop?.close === close) openPop = null;
     clearTimeout(armT);
     document.removeEventListener('mousedown', outside, true); removeEventListener('resize', onResize); removeEventListener('hashchange', close); document.removeEventListener('keydown', esc, true);

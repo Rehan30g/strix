@@ -26,7 +26,7 @@ export function quotaBlock(me: Me): HTMLElement[] {
     quotaMeter('TTS (karakter)', q.tts?.used ?? 0, q.tts?.limit ?? 0),
   ];
   if (q.vc) out.push(quotaMeter('Voice Changer', q.vc.used ?? 0, q.vc.limit ?? 0, fmtSec));
-  if (q.stt) out.push(quotaMeter('Input suara (mic)', q.stt.used ?? 0, q.stt.limit ?? 0, fmtSec));
+  if (q.stt) out.push(quotaMeter('Bicara lewat mic', q.stt.used ?? 0, q.stt.limit ?? 0, fmtSec));
   if (q.search) out.push(quotaMeter('Pencarian web (chat)', q.search.used ?? 0, q.search.limit ?? 0));
   return out;
 }
@@ -43,7 +43,7 @@ export function openAccount(onLogout: () => void): void {
     (v) => { setTheme(v); settings.setPrefs({ theme: v }); }, 'Tema', true);
 
   const adv = h('details', { class: 'disclosure' },
-    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Stability, similarity, style, speed')),
+    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Kestabilan, kemiripan, gaya, kecepatan')),
     h('div', { class: 'disc-b stack' }, tuneControls({ compact: true })));
 
   const logout = h('button', { type: 'button', class: 'btn danger-soft block', html: svg('logout') }, 'Keluar');

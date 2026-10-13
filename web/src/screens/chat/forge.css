@@ -145,3 +145,5 @@
   .pf-panel { gap: 12px; padding: 16px 14px 14px; }
   .pf-panel header h3 { font-size: 22px; }
 }
+/* no WebGL: the real DOM orb under the transparent 2D canvas (placed / scaled by forge.ts) */
+.orb.pf-dorb { position: absolute; left: 0; top: 0; z-index: 0; transform-origin: 0 0; pointer-events: none; will-change: transform; }

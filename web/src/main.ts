@@ -4,6 +4,7 @@ import './styles/components.css';
 import './styles/shell.css';
 import './styles/screens.css';
 import './styles/features.css';
+import './styles/mobile.css';
 import './theme';
 import { refreshOrbs } from './lib/orbs';
 import { api, ApiError, onApiEvent } from './api';

@@ -1,6 +1,8 @@
-/* The persona "forge": making a persona = filling an empty glass sphere and stepping inside it.
-   (a) Outside: a big, empty glass sphere (thin latitude / longitude grid in perspective, a faint rim) that turns when
-       dragged like a ball in your hand. Below it, a tray of six ingredients (Nama, Sifat, Aksen, Bahasa, Suara, Sapaan),
+/* The persona "forge": making a persona = shaping its orb and stepping inside it.
+   The sphere IS the persona's orb: drawn with the app's own orb shader (forgegl.ts), so at rest it is pixel-identical
+   to the 2D orb of the same size and the orb arrives from / leaves to the app's orbs without a visible change; only when
+   the camera starts to move does it wrap onto a sphere and the glass (grid, rim) fade in.
+   (a) Outside: the orb, big, that turns when dragged like a ball in your hand (then the glass grid appears). Below it, a tray of six ingredients (Nama, Sifat, Aksen, Bahasa, Suara, Sapaan),
        each with its current value. "Bantu AI" (Strix) or "Masuk ke bola".
    (b) An ingredient dragged / tapped into the sphere breaks the surface (ripple, a drop of colour, a squash) and the ink
        rises as the persona gets filled (colours of the persona's orb: the voice's, or the AI's iconic colours).
@@ -22,7 +24,7 @@ import { BRAND } from '../../lib/brand';
 import { h } from '../../ui/dom';
 import { field } from '../../ui/controls';
 import { orb, personaOrb, thinkingLevel, type Rgb, type OrbSpec, type CustomOrb, type OrbEl } from '../../ui/orb';
-import { handOff } from '../../ui/transition';
+import { handOff, takeHandOff } from '../../ui/transition';
 import { ForgeGL, basis, type ForgeCam, type Ripple, type V3 } from './forgegl';
 import type { PersonaForm, FormField } from './creator';
 
@@ -47,9 +49,7 @@ const D_IN = 0.5;
 const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const ease = (x: number) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
 const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
-const hash = (s: string) => { let x = 2166136261; for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619); return (x >>> 0) / 4294967296; };
 const BG_A: Rgb = [0.075, 0.078, 0.09], BG_B: Rgb = [0.03, 0.031, 0.037];
-const EMPTY: [Rgb, Rgb, Rgb, Rgb] = [[0.3, 0.31, 0.34], [0.5, 0.51, 0.55], [0.66, 0.67, 0.7], [0.86, 0.87, 0.9]];
 const lumOf = (c: Rgb) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
 const hex = (c: Rgb) => '#' + c.map((v) => Math.round(clamp(v) * 255).toString(16).padStart(2, '0')).join('');
 /** the persona's accent for the UI: its most saturated orb colour, lifted until it reads on the dark stage */
@@ -134,23 +134,38 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
   const root = h('div', { class: 'pf mode-out', role: 'dialog', 'aria-modal': 'true', 'aria-label': f.isNew ? 'Buat persona baru' : 'Edit persona' }, gl.canvas, outside, inside, top, fly, live);
   document.body.append(root);
+  // no WebGL: the sphere's orb is a real DOM orb under the (transparent) canvas
+  const DORB = 400;
+  const dorb = gl.kind === '2d' ? orb(f.spec(), { size: DORB, cls: 'pf-dorb', live: true }) : null;
+  if (dorb) root.insertBefore(dorb, gl.canvas);
+  let lastRS = 0, lastCtr: [number, number] = [0, 0], testHold = false, testRS = 0;
   const app = document.getElementById('app');
   const appWasInert = !!app?.inert;
   if (app) app.inert = true;
 
   /* ---------------- state ---------------- */
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const cam = { d: D_OUT * 1.2, yaw: 0, pitch: 0.16, vyaw: 0, vpitch: 0 };
+  // at rest the camera looks straight at the orb (yaw 0, pitch 0): the orb's own frame
+  const cam = { d: D_OUT, yaw: 0, pitch: 0, vyaw: 0, vpitch: 0 };
+  const REST = basis({ yaw: 0, pitch: 0 });
   let mode: 'out' | 'dive' | 'in' | 'surface' | 'leave' = 'out';
+  let leaveAt = 0;
   let tween: { from: number; to: number; t0: number; dur: number; yaw0: number; yaw1: number; pitch1: number; done: () => void } | null = null;
   let active = 1, yawT = 0, dragYaw: { x: number; yaw0: number; id: number; lx: number; v: number } | null = null;
   let T = 0, last = 0, raf = 0, closed = false, frames = 0;
   const ripples: Ripple[] = [];
-  let drops = 0, fill = f.isNew ? 0 : 0.6, scan = 0, flash = 0, sq = 0, vsq = 0, glass = 1;
-  let colors: [Rgb, Rgb, Rgb, Rgb] = EMPTY.map((c) => [...c] as Rgb) as [Rgb, Rgb, Rgb, Rgb];
+  let drops = 0, scan = 0, flash = 0, sq = 0, vsq = 0, glass = 0, k3 = 0;
+  // the orb: one look (spec) + its animation clock, inherited from the orb that arrived (no jump in the pattern)
+  const arrived = takeHandOff();
+  let spec = f.spec(), orbTime = arrived?.time ?? spec.t0;
+  let specB: OrbSpec | null = null, timeB = 0, morph = 1, specWant = spec.key, specAt = 0;
+  /** engaged = the camera has moved (drag / dive / drop): the orb is wrapped on the sphere and the glass shows */
+  let engaged = false, settleRest = false;
+  let arrive = arrived && !reduced ? { r: arrived.rect, t0: 0 } : null;
   let tourGen = 0;
   const log: string[] = [];
   const note = (s: string) => { log.push(`${T.toFixed(2)} ${s}`); if (log.length > 200) log.shift(); };
+  note('arrived ' + (arrived ? Math.round(arrived.rect.width) + '@' + Math.round(arrived.rect.left) : 'none') + ' reduced=' + reduced);
   const L = { W: 0, H: 0, P: 600, Fout: 700, kb: false, ctrOut: [0, 0] as [number, number], ctrIn: [0, 0] as [number, number], rOut: 120 };
   const hMax: Record<number, number> = {};
 
@@ -195,19 +210,20 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const camF = () => L.P + (L.Fout - L.P) * clamp((cam.d - 0.9) / (D_OUT - 0.9));
   const ctrNow = (): [number, number] => { const k = ease(inMix()); return [L.ctrOut[0] + (L.ctrIn[0] - L.ctrOut[0]) * k, L.ctrOut[1] + (L.ctrIn[1] - L.ctrOut[1]) * k]; };
   const camNow = (): ForgeCam => {
-    const B = basis({ pos: [0, 0, 0], yaw: cam.yaw, pitch: cam.pitch, f: 1 });
+    const B = basis({ yaw: cam.yaw, pitch: cam.pitch });
     return { pos: [-B.Fw[0] * cam.d, -B.Fw[1] * cam.d, -B.Fw[2] * cam.d], yaw: cam.yaw, pitch: cam.pitch, f: camF() };
   };
   const panelYaw = (i: number) => i * STEP;
   function dive(to: 'in' | 'out', panel = active, dur = 1.5, after?: () => void) {
     const goingIn = to === 'in';
+    if (goingIn) engaged = true;
     if (goingIn) active = panel;
     const yaw1 = goingIn ? cam.yaw + wrapA(panelYaw(panel) - cam.yaw) : cam.yaw;
     mode = goingIn ? 'dive' : (mode === 'leave' ? 'leave' : 'surface');
     root.classList.remove('mode-out', 'mode-in');
     root.classList.add('mode-move');
     tween = {
-      from: cam.d, to: goingIn ? D_IN : D_OUT, t0: T, dur: reduced ? 0.01 : dur, yaw0: cam.yaw, yaw1, pitch1: goingIn ? 0 : 0.16,
+      from: cam.d, to: goingIn ? D_IN : D_OUT, t0: T, dur: reduced ? 0.01 : dur, yaw0: cam.yaw, yaw1, pitch1: 0,
       done: () => {
         tween = null;
         root.classList.remove('mode-move');
@@ -280,10 +296,10 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
     const s = sphere(), dx = (fl.x0 - s.x) / Math.max(1, s.r), dy = (fl.y0 - s.y) / Math.max(1, s.r);
     const m = Math.hypot(dx, dy), nx = m > 0.9 ? (dx / m) * 0.9 : dx, ny = m > 0.9 ? (dy / m) * 0.9 : dy;
     const nz = -Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-    const B = basis({ pos: [0, 0, 0], yaw: cam.yaw, pitch: cam.pitch, f: 1 });
+    const B = basis({ yaw: cam.yaw, pitch: cam.pitch });
     const dir: V3 = [B.R[0] * nx - B.Up[0] * ny + B.Fw[0] * nz, B.R[1] * nx - B.Up[1] * ny + B.Fw[1] * nz, B.R[2] * nx - B.Up[2] * ny + B.Fw[2] * nz];
     addRipple(dir, specColor(fl.i));
-    drops++; vsq += 2.6;
+    drops++; vsq += 2.6; engaged = true;
     const k = PANELS.findIndex((p) => p.k === fl.k);
     setTimeout(() => { if (!closed && mode === 'out') dive('in', k, 1.5, () => focusPanel(k)); }, reduced ? 0 : 380);
   }
@@ -359,12 +375,6 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
     const n = Object.values(fl).filter(Boolean).length;
     capH.textContent = n <= 2 && !drops ? 'Bola ini masih kosong' : n >= 5 ? 'Bolanya hampir penuh' : 'Bolanya mulai terisi';
   }
-  const fillTarget = () => {
-    const fl = f.filled();
-    const n = (fl.name ? 1 : 0) + (fl.desc ? 1.4 : 0) + (fl.accent ? 0.6 : 0) + (fl.greet ? 0.8 : 0) + (fl.voice && (fl.name || fl.desc) ? 0.6 : 0);
-    return clamp(Math.min(0.24, drops * 0.08) + (n / 4.4) * 0.7, 0, 0.9);
-  };
-
   /* ---------------- save: out of the sphere, the glass falls away, the orb flies on ---------------- */
   function trySave() {
     if (mode === 'leave') return;
@@ -384,25 +394,31 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
     mode = 'leave';
     root.classList.add('leaving');
     const reveal = () => {
-      // the glass falls away: only the persona's coloured ball is left, then the stage dissolves into the app while a
-      // real orb element (same place, same size) takes over and is handed to "Persona siap"
+      // back to the orb's own front view, then the glass and the sphere mapping fall away: what is left is exactly the
+      // 2D orb; a real orb element with the same look and clock takes its place and the stage dissolves into the app
+      settleRest = true;   // turn back to the front view first; `engaged` drops (flatten) once it is there
       const t0 = T;
-      const s0 = sphere();
-      const ball = orb(f.spec(), { size: Math.round(s0.r * 2), cls: 'pf-handoff', live: true });
-      ball.style.left = (s0.x - s0.r).toFixed(1) + 'px'; ball.style.top = (s0.y - s0.r).toFixed(1) + 'px';
-      ball.style.opacity = '0';
-      document.body.append(ball);
+      let ball: (OrbEl & { _live: { time: number } | null }) | null = null;
       const step = () => {
         if (closed) return;
-        const k = (T - t0) / (reduced ? 0.05 : 0.75);
-        glass = 1 - clamp(k / 0.45);                                   // the grid and rim fall away
-        ball.style.opacity = clamp((k - 0.3) / 0.3).toFixed(3);       // the real orb takes over the coloured ball
-        root.style.opacity = (1 - clamp((k - 0.55) / 0.45)).toFixed(3);   // dark stage -> the app
-        if (k < 1) { requestAnimationFrame(step); return; }
-        handOff(ball, 1600);
-        note('handoff');
-        close(true);
-        onSaved(out, f.isNew);
+        const restOk = reduced || (Math.abs(wrapA(cam.yaw)) < 0.004 && Math.abs(cam.pitch) < 0.004 && k3 < 0.002 && glass < 0.002 && !specB);
+        if (!ball && (restOk || T - t0 > 1.6)) {
+          const s0 = sphere();
+          // a DOM orb's visible radius is .88 of half its box (ui/orb.ts): size the element so the disc matches
+          const box = (s0.r * 2) / 0.88;
+          ball = orb(spec, { size: Math.round(box), cls: 'pf-handoff', live: !reduced }) as OrbEl & { _live: { time: number } | null };
+          if (ball._live) ball._live.time = orbTime;
+          ball.style.left = (s0.x - Math.round(box) / 2).toFixed(1) + 'px'; ball.style.top = (s0.y - Math.round(box) / 2).toFixed(1) + 'px';
+          document.body.append(ball);
+          note('handoff');
+          leaveAt = T;
+        }
+        if (ball) {
+          const k = (T - leaveAt) / (reduced ? 0.05 : 0.32);
+          root.style.opacity = (1 - clamp(k)).toFixed(3);   // dark stage -> the app; the orb stays
+          if (k >= 1) { handOff(ball, 1600); close(true); onSaved(out, f.isNew); return; }
+        }
+        requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
     };
@@ -478,7 +494,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   gl.canvas.addEventListener('pointerdown', (e) => {
     if (mode !== 'out' && mode !== 'in') return;
     sdrag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), moved: false };
-    if (mode === 'out') { cam.vyaw = 0; cam.vpitch = 0; }
+    if (mode === 'out') { cam.vyaw = 0; cam.vpitch = 0; engaged = true; }
     if (mode === 'in') dragYaw = { x: e.clientX, yaw0: cam.yaw, id: e.pointerId, lx: e.clientX, v: 0 };
     try { gl.canvas.setPointerCapture(e.pointerId); } catch { /* */ }
   });
@@ -545,21 +561,54 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
         if (!sdrag) {
           cam.yaw += cam.vyaw * dt; cam.pitch = clamp(cam.pitch + cam.vpitch * dt, -1.1, 1.1);
           const k = Math.exp(-dt * 2.4); cam.vyaw *= k; cam.vpitch *= k;
-          if (!reduced && mode === 'out' && Math.abs(cam.vyaw) < 0.05) cam.yaw += dt * 0.05;   // a slow idle turn
-          if (Math.abs(cam.vpitch) < 0.05) cam.pitch += (0.16 - cam.pitch) * dt * 0.8;
+          if (settleRest) {
+            // leaving: back to the front view (shortest way round)
+            const ky = 1 - Math.exp(-dt * 8);
+            cam.yaw = wrapA(cam.yaw) * (1 - ky); cam.pitch -= cam.pitch * ky; cam.vyaw = cam.vpitch = 0;
+            if (Math.abs(cam.yaw) < 0.004 && Math.abs(cam.pitch) < 0.004) { cam.yaw = 0; cam.pitch = 0; engaged = false; }
+          } else if (engaged) {
+            if (!reduced && mode === 'out' && Math.abs(cam.vyaw) < 0.05) cam.yaw += dt * 0.05;   // a slow idle turn
+            if (Math.abs(cam.vpitch) < 0.05) cam.pitch += (0.12 - cam.pitch) * dt * 0.8;
+          }
         }
-        if (!tween && cam.d > D_OUT) cam.d += (D_OUT - cam.d) * (1 - Math.exp(-dt * 2.5));   // the first approach
       }
       flash = Math.exp(-Math.pow((cam.d - 1) / 0.13, 2)) * (tween ? 1 : 0);
       gl.canvas.style.filter = flash > 0.1 && !reduced ? `blur(${(flash * 4).toFixed(1)}px)` : '';
       vsq += (-90 * sq - 7 * vsq) * dt; sq += vsq * dt; sq = clamp(sq, -0.1, 0.1);
-      const ft = mode === 'leave' ? Math.max(fillTarget(), 0.85) : fillTarget();
-      fill += (ft - fill) * Math.min(1, dt * 1.8);
-      const tgt = fill > 0.02 || f.hasDraft() || f.aiOrb() ? f.spec().colors : EMPTY;
-      colors = colors.map((c, i) => c.map((v, j) => v + (tgt[i][j] - v) * Math.min(1, dt * 2.5)) as Rgb) as typeof colors;
+      // the orb's clock runs exactly like a resting 2D orb's (ui/orb.ts live loop, no sound)
+      if (!testHold) orbTime += Math.min(0.05, dt) * 0.32 * (spec.speed ?? 1);
+      if (specB) timeB += Math.min(0.05, dt) * 0.32 * (specB.speed ?? 1);
+      // a new look (voice, name, AI colours, Studio): once the typing settles, cross-dissolve old -> new
+      const want = f.spec();
+      if (want.key !== specWant) { specWant = want.key; specAt = T; }
+      if (want.key !== spec.key && T - specAt > 0.45 && !specB && mode !== 'leave') { specB = spec; timeB = orbTime; spec = want; orbTime = want.t0; morph = reduced ? 1 : 0; }
+      if (specB) { morph = Math.min(1, morph + dt / 0.6); if (morph >= 1) specB = null; }
+      // the sphere mapping and the glass follow `engaged`
+      const kT = engaged ? 1 : 0;
+      k3 += (kT - k3) * (reduced ? 1 : 1 - Math.exp(-dt * 9)); if (Math.abs(k3 - kT) < 0.001) k3 = kT;
+      glass += (kT - glass) * (reduced ? 1 : 1 - Math.exp(-dt * (engaged ? 3 : 9))); if (Math.abs(glass - kT) < 0.001) glass = kT;
       scan += ((f.busy() ? 1 : 0) - scan) * Math.min(1, dt * 3);
       const c = camNow();
-      gl.draw({ cam: c, T, colors, fill, pat: 2.3 + hash(f.desc.value.slice(0, 200)) * 2.4, scan, flash, squash: [1 + sq, 1 - sq, 1 + sq], ripples, bgA: BG_A, bgB: BG_B, ctr: ctrNow(), glass });
+      // arriving from a button / another orb: the flat orb grows from there to its place on the stage
+      let rS = ForgeGL.radius(c) || L.rOut, ctr = ctrNow();
+      if (arrive) {
+        if (!arrive.t0) arrive.t0 = T;
+        const a = ease((T - arrive.t0) / 0.55), rr = root.getBoundingClientRect();
+        const ax = arrive.r.left + arrive.r.width / 2 - rr.left - L.W / 2, ay = arrive.r.top + arrive.r.height / 2 - rr.top - L.H / 2;
+        const r0 = (arrive.r.width / 2) * 0.88;   // the arriving DOM orb's visible radius
+        rS = r0 + (rS - r0) * a; ctr = [ax + (ctr[0] - ax) * a, ay + (ctr[1] - ay) * a];
+        if (a >= 1) arrive = null;
+      }
+      if (testRS) rS = testRS;
+      lastRS = rS; lastCtr = ctr;
+      gl.draw({ cam: c, T, spec, time: orbTime, specB, timeB, morph, k: k3, rS, ctr, glass, scan, flash, squash: [1 + sq, 1 - sq, 1 + sq], ripples, bgA: BG_A, bgB: BG_B, rest: REST });
+      if (dorb) {
+        // no WebGL: a real DOM orb stands in for the sphere outside
+        if (dorb._spec.key !== spec.key) dorb.setSpec(spec);
+        const box = (rS * 2) / 0.88, x = L.W / 2 + ctr[0] - box / 2, y = L.H / 2 + ctr[1] - box / 2;
+        dorb.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) scale(${(box / DORB).toFixed(4)})`;
+        dorb.style.opacity = clamp((cam.d - 1.6) / 0.8).toFixed(3);
+      }
       const outK = clamp((cam.d - 2.2) / 0.8);
       outside.style.opacity = (mode === 'leave' ? 0 : outK).toFixed(3);
       outside.style.visibility = outK > 0.01 && mode !== 'leave' ? 'visible' : 'hidden';
@@ -588,15 +637,20 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
 
   /* ---------------- test hook ---------------- */
   (window as unknown as { __forge?: unknown }).__forge = () => ({
-    mode, active: PANELS[active].k, cam: { d: +cam.d.toFixed(3), yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3), f: +camF().toFixed(1) }, fill: +fill.toFixed(3), scan: +scan.toFixed(2), drops, glass,
+    mode, active: PANELS[active].k, cam: { d: +cam.d.toFixed(3), yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3), f: +camF().toFixed(1) }, scan: +scan.toFixed(2), drops, glass: +glass.toFixed(3), k: +k3.toFixed(3),
+    orbTime, specKey: spec.key, morph, engaged, arriving: !!arrive, rS: lastRS, ctr: lastCtr,
     renderer: gl.kind, kb: L.kb, frames, busy: f.busy(), filled: f.filled(), aiOrb: f.aiOrb(), orb: f.orb(), ripples: ripples.length, log: log.slice(), msg: f.msg.textContent,
     sphere: sphere(), chips: tiles.map((c) => { const r = c.getBoundingClientRect(); return { k: c.dataset.k, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
     panelRects: panels.map((p) => { const r = p.getBoundingClientRect(); return { k: p.dataset.k, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), op: p.style.opacity }; }),
     /** screen position of a world point (e.g. the sphere's front point) */
     screenOf: (p: V3) => ForgeGL.project(camNow(), L.W, L.H, ctrNow(), p),
-    front: () => { const B = basis({ pos: [0, 0, 0], yaw: cam.yaw, pitch: cam.pitch, f: 1 }); return [-B.Fw[0], -B.Fw[1], -B.Fw[2]] as V3; },
+    front: () => { const B = basis({ yaw: cam.yaw, pitch: cam.pitch }); return [-B.Fw[0], -B.Fw[1], -B.Fw[2]] as V3; },
     go: (k: PanelKey) => goPanel(PANELS.findIndex((p) => p.k === k), true), dive: (to: 'in' | 'out', k: PanelKey = 'name') => dive(to, PANELS.findIndex((p) => p.k === k)),
     stopSpin: () => { cam.vyaw = 0; cam.vpitch = 0; },
+    /** tests: hold the orb clock at t (default: the still frame t0) and force the resting screen radius */
+    hold: (t?: number, r?: number) => { testHold = true; orbTime = t ?? spec.t0; testRS = r || 0; },
+    release: () => { testHold = false; testRS = 0; },
+    spec: () => spec,
   });
 
   layout();

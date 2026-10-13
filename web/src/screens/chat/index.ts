@@ -18,6 +18,7 @@ import { field } from '../../ui/controls';
 import { voicePicker } from '../../ui/voicepicker';
 import { orb, jelly, thinkingLevel, onOrbsChange } from '../../ui/orb';
 import { openOrbStudio } from '../../ui/orbstudio';
+import { orbGhost, handOff, receiveOrb, flyOrb, morphOrb, enter } from '../../ui/transition';
 import { drag, swipeRow, haptic, rubber, settle } from '../../ui/gesture';
 import { Captions } from '../../lib/captions';
 import { startStt, sttSupported, prewarmStt, type SttSession } from '../../lib/stt';
@@ -111,7 +112,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function paintHead() {
     if (!cur) return;
     whoName.textContent = cur.name;
-    theOrb.setSpec(orbSpecFor(cur));
+    const spec = orbSpecFor(cur);
+    if (theOrb._spec?.key !== spec.key) morphOrb(theOrb, () => theOrb.setSpec(spec));
     orbBtn.setAttribute('aria-label', `Bola ${cur.name}. Ketuk untuk ganti persona, atau untuk menyela saat bicara.`);
     input.placeholder = log.verdict ? 'Percakapan selesai' : `Ketik untuk ${cur.name}...`;
   }
@@ -350,6 +352,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function open(id: string) {
     stopAll();
     const p = personas.find((x) => x.id === id) || null;
+    const switched = !!cur && !!p && cur.id !== p.id;
     cur = p;
     caps.clear(); hideYou(0); retry = null;
     if (!p) return;
@@ -357,6 +360,9 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     setChatPrefs({ last: p.id });
     log = loadLog(p.id);
     paintHead();
+    // a persona picked in the list (or "Ngobrol" after creating one): its orb lands here
+    void receiveOrb(theOrb);
+    if (switched) enter(stage, { dy: 8, ms: 300 });
     if (log.verdict) showVerdict(log.verdict);
     else if (!log.msgs.length) {
       const g = greetingFor(p);
@@ -834,16 +840,28 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   /* ================= sheets ================= */
   function openPersonaSheet() {
     const list = h('div', { class: 'ps-list', role: 'list' });
+    let curRowOrb: HTMLElement | null = null, picking = false;
     const paint = () => {
       const rows: Node[] = [];
       if (!loaded) rows.push(...[0, 1, 2].map(() => h('div', { class: 'skel', style: 'height:60px;margin:4px 0' })));
       if (charsErr) rows.push(h('div', { class: 'notice bad', html: S('alert') }, h('span', null, `Gagal memuat persona: ${charsErr}`)));
       for (const p of personas) {
+        const rowOrb = orb(orbSpecFor(p), { size: 46 });
+        if (cur?.id === p.id) curRowOrb = rowOrb;
         const main = h('button', { type: 'button', class: 'ps-main', 'aria-current': cur?.id === p.id ? 'true' : null },
-          orb(orbSpecFor(p), { size: 46 }),
+          rowOrb,
           h('span', { class: 'ps-t' }, h('b', null, p.name), h('span', null, p.builtin ? 'Persona bawaan' : (p.sub || 'Persona buatanmu'))),
           cur?.id === p.id ? h('span', { class: 'ps-on', html: S('check') }) : null);
-        main.onclick = () => { m.close(); if (cur?.id !== p.id) ctx.navigate('chat/' + encodeURIComponent(p.id)); };
+        main.onclick = () => {
+          if (cur?.id === p.id) { m.close(); return; }   // same persona: the orb flies back (onClose)
+          // shared element: this row's orb flies onto the big orb of the chat while the persona changes
+          picking = true;
+          const g = orbGhost(rowOrb);
+          m.close();
+          if (g) handOff(g);
+          ctx.navigate('chat/' + encodeURIComponent(p.id));
+          setTimeout(() => { if (theOrb.style.visibility === 'hidden' && !document.querySelector('.orb-ghost')) theOrb.style.visibility = ''; }, 900);
+        };
         const more = h('button', { type: 'button', class: 'btn icon ghost ps-more', 'aria-label': `Aksi untuk ${p.name}`, 'aria-haspopup': 'menu', html: S('moreV') });
         more.onclick = (e) => { e.stopPropagation(); ui.popover(more, h('div', null, ...actions(p).map((a) => ui.menuItem(a.label, a.icon, () => { m.close(); a.run(); }, a.cls || ''))), { align: 'end' }); };
         const host = swipeRow(h('div', { class: 'ps-row' }, main, more), actions(p).map((a) => ({ ...a, run: () => { m.close(); a.run(); } })), S);
@@ -854,9 +872,28 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     };
     const mk = h('button', { type: 'button', class: 'btn primary block lg', html: S('plus') }, h('span', null, 'Buat persona'));
     const cl = h('a', { class: 'btn soft block', href: '#/voices/clone', html: S('mic') }, h('span', null, 'Clone suaramu dulu'));
-    const m = ui.modal({ title: 'Persona', cls: 'ps-dlg', body: h('div', { class: 'ps' }, list, h('div', { class: 'ps-new' }, mk, cl), h('p', { class: 'ps-tip' }, 'Geser persona ke kiri untuk edit, bola, atau hapus.')) });
-    mk.onclick = () => { m.close(); newPersona(); };
+    const m = ui.modal({ title: 'Persona', cls: 'ps-dlg', body: h('div', { class: 'ps' }, list, h('div', { class: 'ps-new' }, mk, cl), h('p', { class: 'ps-tip' }, 'Geser persona ke kiri untuk edit, bola, atau hapus.')),
+      // closing without a pick: the active row's orb flies back into the big orb
+      onClose: () => { if (!picking) { if (curRowOrb?.isConnected && theOrb.style.visibility === 'hidden') void flyOrb(curRowOrb, theOrb); else theOrb.style.visibility = ''; } } });
+    mk.onclick = () => {
+      picking = true;
+      // a new, still empty orb grows from the button into the persona forge
+      const ic = (mk.querySelector('svg') || mk) as HTMLElement, r = ic.getBoundingClientRect();
+      const seed = orb(orbSpecFor({ voiceId: (ctx.store.get().voices || [])[0]?.id || DEFAULT_VOICE, name: 'Persona' }), { size: Math.max(20, Math.round(r.width)), cls: 'orb-ghost', live: true });
+      seed.style.left = r.left + 'px'; seed.style.top = r.top + 'px';
+      document.body.append(seed); handOff(seed);
+      m.close(); newPersona();
+      setTimeout(() => { if (!document.querySelector('.pf')) theOrb.style.visibility = ''; }, 400);
+    };
     paint();
+    // shared element: the big orb shrinks into the active persona's row (and comes back when the sheet closes)
+    const cro = curRowOrb as HTMLElement | null;   // set by paint()
+    if (cro && theOrb.isConnected) {
+      // the active row in view first (scroll the sheet only, never the page)
+      const sc = cro.closest('.dlg-b') as HTMLElement | null, row = cro.closest('.ps-row') as HTMLElement | null;
+      if (sc && row) { const rr = row.getBoundingClientRect(), sr = sc.getBoundingClientRect(); if (rr.bottom > sr.bottom || rr.top < sr.top) sc.scrollTop += rr.top - sr.top - sr.height / 2 + rr.height / 2; }
+      const g = orbGhost(theOrb); if (g) { theOrb.style.visibility = 'hidden'; handOff(g); void receiveOrb(cro); }
+    }
     onDisconnect(list, settings.subscribe('chat.personas', () => { buildPersonas(); paint(); }));
   }
   function actions(p: Persona): Array<{ label: string; icon: string; cls?: string; run: () => void }> {

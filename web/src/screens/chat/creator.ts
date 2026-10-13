@@ -11,7 +11,7 @@ import { h } from '../../ui/dom';
 import { field, seg } from '../../ui/controls';
 import { voicePicker, type VoicePicker } from '../../ui/voicepicker';
 import { orb, thinkingLevel, cleanOrb, type CustomOrb, type OrbSpec } from '../../ui/orb';
-import { receiveOrb } from '../../ui/transition';
+import { receiveOrb, orbGhost, handOff } from '../../ui/transition';
 import { openOrbStudio } from '../../ui/orbstudio';
 import { type CustomPersona, LANGS, ACCENTS, cleanName, cleanAccent, langKey, langName, newId, orbSpecFor, splitClause, joinClause, saveCustom } from '../../lib/persona';
 import { openForge } from './forge';
@@ -322,7 +322,8 @@ export function offerAfterPersona(ctx: ScreenCtx, p: CustomPersona): void {
     h('h3', null, cur.name), h('p', null, 'Kamu bisa langsung ngobrol dengan suara, atau bentuk dulu bola miliknya di Studio Bola.'), talk, shape) });
   // match-cut: the persona editor hands its orb over; it flies onto this one (nothing happens otherwise)
   void receiveOrb(big);
-  talk.onclick = () => { m.close(); ctx.navigate('chat/' + encodeURIComponent(cur.id)); };
+  // shared element: this orb flies onto the chat's big orb
+  talk.onclick = () => { const g = orbGhost(big); m.close(); if (g) handOff(g); ctx.navigate('chat/' + encodeURIComponent(cur.id)); };
   shape.onclick = () => openOrbStudio({
     title: 'Studio Bola', subtitle: `Bola untuk ${cur.name}`, initial: cur.orb || null, base: orbSpecFor({ voiceId: cur.voiceId, name: cur.name }), seedKey: 'p:' + cur.name.toLowerCase(),
     resetLabel: 'Ikuti bola suara',

@@ -10,6 +10,7 @@ import type { Voice, LibraryPage, LibraryQuery, LibraryVoice, LibraryWarning } f
 import { h, onDisconnect } from '../../ui/dom';
 import { field, seg } from '../../ui/controls';
 import { voiceMeta, shortName, voiceOrbButton } from '../../ui/voicepicker';
+import { flyOrb } from '../../ui/transition';
 import { miniPlayer, pauseAllMini } from '../../ui/audio';
 import { swipeRow, pullToRefresh, haptic } from '../../ui/gesture';
 import { addVoiceResult, removeVoice, categoryLabel } from '../../lib/collection';
@@ -149,7 +150,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   const addState = new Map<string, AddState>();
   const libSearch = h('input', { class: 'input', type: 'search', placeholder: 'Cari nama, gaya, aksen...', 'aria-label': 'Cari di Library', autocomplete: 'off' }) as HTMLInputElement;
   const sel = (label: string, opts: Array<[string, string]>) => h('select', { class: 'select', 'aria-label': label }, ...opts.map(([v, l]) => new Option(l, v))) as HTMLSelectElement;
-  const sortSel = sel('Urutkan', [['trending', 'Trending'], ['usage', 'Paling dipakai'], ['cloned', 'Paling banyak ditambah'], ['created', 'Terbaru']]);
+  const sortSel = sel('Urutkan', [['trending', 'Sedang populer'], ['usage', 'Paling dipakai'], ['cloned', 'Paling banyak ditambah'], ['created', 'Terbaru']]);
   const filterBtn = h('button', { type: 'button', class: 'btn soft lib-fbtn', 'aria-expanded': 'false', html: S('sliders') }, h('span', null, 'Filter'), h('span', { class: 'lib-fcount', hidden: true }));
   const fSel = {
     gender: sel('Gender', [['', 'Semua gender'], ...FACET.genders.map((g): [string, string] => [g, G_LABEL[g] || cap(g)])]),
@@ -249,16 +250,19 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       ['Aksen', v.accent ? cap(v.accent) : '-'], ['Bahasa', [langName(v.language), v.locale].filter(Boolean).join(' · ') || '-'],
       ['Kegunaan', v.useCase ? UC_LABEL[v.useCase] || cap(v.useCase) : '-'], ['Gaya', v.descriptive ? cap(v.descriptive) : '-'],
       ['Kategori', v.category ? CAT_LABEL[v.category] || cap(v.category) : '-'], ['Dipakai', `${fmtNum(v.clonedBy)} pengguna`],
-      ['Notice period', v.noticePeriodDays ? `${v.noticePeriodDays} hari` : 'Tidak ada'],
+      ['Masa pemberitahuan', v.noticePeriodDays ? `${v.noticePeriodDays} hari` : 'Tidak ada'],
     ];
     const addSlot = h('div', null, addBtnFor(v));
     const sync = () => addSlot.replaceChildren(addBtnFor(v));
     const unsub = store.select((s) => s.voices, sync);
     const watch = setInterval(sync, 400); // add state changes (adding -> done) while the sheet is open
+    // shared element: the card's orb grows into the sheet's orb (and back when it closes)
+    const cardOrb = document.querySelector<HTMLElement>(`.lib-card[data-id="${CSS.escape(v.id)}"] .orb`);
+    const headBtn = voiceOrbButton(v, 72);
     const m = ui.modal({
-      title: shortName(v), cls: 'lib-dlg', onClose: () => { unsub(); clearInterval(watch); },
+      title: shortName(v), cls: 'lib-dlg', onClose: () => { unsub(); clearInterval(watch); if (cardOrb?.isConnected) void flyOrb(headBtn.querySelector('.orb'), cardOrb, 360); },
       body: h('div', { class: 'lib-detail' },
-        h('div', { class: 'lib-dhead' }, voiceOrbButton(v, 72), h('div', null, h('b', null, v.name), h('span', null, libMeta(v)))),
+        h('div', { class: 'lib-dhead' }, headBtn, h('div', null, h('b', null, v.name), h('span', null, libMeta(v)))),
         v.description ? h('p', { class: 'lib-ddesc' }, v.description) : null,
         ...v.warnings.map((w) => h('div', { class: `notice ${w.level === 'warn' ? 'warn' : 'info'}`, html: S(w.level === 'warn' ? 'alert' : 'info') }, h('span', null, w.message))),
         h('dl', { class: 'lib-dl' }, ...rows.flatMap(([k, val]) => [h('dt', null, k), h('dd', null, val)])),
@@ -266,6 +270,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         addSlot),
     });
     void m;
+    void flyOrb(cardOrb, headBtn.querySelector('.orb'));
   }
 
   /* ---- windowed grid ---- */

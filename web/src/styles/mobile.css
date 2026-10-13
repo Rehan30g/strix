@@ -1,0 +1,38 @@
+/* Phones: thumb-friendly touch targets, readable inputs, menus as bottom sheets.
+   Loaded last; only applies at small widths so desktop density stays as it is. */
+@media (max-width: 640px) {
+  /* touch targets >= 44-48 px with room between them */
+  .btn { min-height: 44px; }
+  .btn.sm { height: 44px; min-height: 44px; }
+  .btn.icon { width: 48px; height: 48px; }
+  .btn.icon.sm { width: 44px; height: 44px; }
+  .dlg-h .btn.icon { width: 44px; height: 44px; }
+  .dlg-h { padding: 12px 10px 6px 20px; }
+  .seg button { min-height: 44px; font-size: 15px; }
+  .chip { height: 40px; padding: 0 14px; font-size: 14px; }
+  .tag-chip { height: 44px; font-size: 13.5px; }
+  .tag-row { gap: 8px; }
+  /* (:root raises specificity over the lazily loaded screen styles) */
+  :root .vx-chip { height: 44px; min-width: 44px; justify-content: center; flex-shrink: 0; font-size: 14px; }
+  :root .vx-top .vx-more { width: 48px; height: 48px; flex-shrink: 0; }
+  :root .ps-row .ps-more { width: 48px !important; height: 48px !important; }
+  .ps-main { min-height: 68px; padding-right: 56px; }
+  .menu-item { min-height: 52px; font-size: 16px; gap: 14px; }
+  .switch { min-height: 52px; font-size: 15.5px; }
+  .switch .sw-text small { font-size: 13.5px; }
+  .switch input { width: 48px; height: 28px; }
+  .switch input::after { width: 22px; height: 22px; }
+  .switch input:checked::after { transform: translateX(20px); }
+  /* readable text: inputs >= 16 px (no zoom on focus), helper text >= 13.5 px */
+  .input, .select, .textarea, .mspk-name.input { font-size: 16px; }
+  .mspk-name.input { height: 44px; }
+  .hint, .field .hint { font-size: 13.5px; }
+  label input[type=checkbox] { width: 24px; height: 24px; }
+  input[type=range] { min-height: 44px; }
+
+  /* menus anchored to a button become a bottom action sheet within thumb reach */
+  .menu.sheet { position: fixed !important; left: 8px !important; right: 8px !important; top: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+    min-width: 0; max-height: 70vh; overflow: auto; padding: 8px; border-radius: 18px; animation: menuUp .22s cubic-bezier(.2, .7, .2, 1); }
+  .menu-scrim { position: fixed; inset: 0; z-index: 119; background: var(--scrim); animation: fade .16s ease; }
+}
+@keyframes menuUp { from { transform: translateY(24px); opacity: 0; } }

@@ -131,7 +131,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
 
   /* ---------- advanced ---------- */
   const adv = h('details', { class: 'disclosure' },
-    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Stability, similarity, style, speed')),
+    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Kestabilan, kemiripan, gaya, kecepatan')),
     h('div', { class: 'disc-b stack' }, tuneControls({ compact: true })));
 
   /* ---------- history ---------- */
@@ -152,7 +152,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     modeSeg.setValue(m);
     single.hidden = m !== 'single';
     dlg.el.hidden = m !== 'dialog';
-    adv.querySelector('small')!.textContent = m === 'dialog' ? 'Berlaku untuk semua pembicara (kecuali tuning khusus)' : 'Stability, similarity, style, speed';
+    adv.querySelector('small')!.textContent = m === 'dialog' ? 'Berlaku untuk semua pembicara (kecuali tuning khusus)' : 'Kestabilan, kemiripan, gaya, kecepatan';
   }
 
   root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },

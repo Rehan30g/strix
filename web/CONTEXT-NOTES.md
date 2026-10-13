@@ -26,6 +26,8 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
 - `src/ui/overlay.ts` is spam-safe: one modal per key (cls / title), one drawer per title, popovers toggle on their
   anchor and close any other, identical toasts are merged. `.btn:active` uses `scale` (not `transform`), so buttons that
   are positioned with a transform never jump when pressed (that was the `.ps-more` jump).
+- `src/styles/mobile.css` — phones (<= 640 px): touch targets >= 44-48 px, inputs 16 px, popover menus become a bottom
+  action sheet (ui/overlay.ts `.menu.sheet` + scrim).
 - `src/ui/gesture.ts` — `drag()` (axis-locked Pointer Events), `swipeRow()` (actions behind a row), `pullToRefresh()`
   (Touch Events), `haptic()`, `rubber()`. Used by: modal bottom sheets (drag handle/header down to close), tab swipe
   in `shell.ts` (phones, not inside `[data-hswipe]`/inputs/range/players), Chat edge-swipe back to the list, persona /
@@ -49,6 +51,13 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   WebGL shader, Canvas 2D fallback; phone keyboard lays the edited panel flat in the visible area. Under
   prefers-reduced-motion the classic modal (`openClassicEditor`) is used. Test hook `window.__forge()`.
   Look: neutral dark stage, hairline panels, one accent from the persona's orb; panels are nearly full screen on phones.
+  The forge sphere IS the persona's orb: forgegl.ts compiles ui/orb.ts ORB_FS into `orbA()` / `orbB()` (B = morph from the
+  previous look) and draws it flat at rest (pixel-identical to a 2D orb of the same size: test lite-ident, mean diff < 1%),
+  wrapped on the sphere + glass grid only once the camera moves; on save it turns back to the front view and flattens,
+  then a real orb element with the same clock takes over (no jump). A DOM orb's disc is .88 of its box.
+  Shared-element flights (ui/transition.ts orbGhost / flyOrb / receiveOrb / takeHandOff / morphOrb): chat orb <-> persona
+  list row, list row -> chat orb on pick, "Buat persona" -> forge, forge -> "Persona siap" -> chat orb, library card <->
+  detail sheet, cross-morph of the chat orb on persona change. A new flight ends the previous one (no ghosts left).
   Dragging the sphere turns it like a ball in the hand. `/api/persona/assist` also returns `orb` (iconic colours / style /
   shape) which is applied as the persona's CustomOrb (`shape` round|soft|blob|drop is supported by ui/orb.ts).
 - `src/screens/voices` — `#/voices` Koleksiku, `#/voices/library` Library = the WHOLE public ElevenLabs Voice Library

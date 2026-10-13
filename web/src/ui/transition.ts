@@ -5,6 +5,7 @@
      leave + enter on the given element.
    - orb match-cut: a page hands a live orb element over (handOff), the next page receives it (receiveOrb) and the orb
      flies / shrinks onto its own orb (uniform scale only: it stays perfectly round), then the real one takes over. */
+import { orb, type OrbSpec } from './orb';
 export const EASE = 'cubic-bezier(.2,.7,.2,1)';
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 export interface MoveOpts { dx?: number; dy?: number; scale?: number; ms?: number; delay?: number }
@@ -37,37 +38,93 @@ export async function swap(el: HTMLElement | null, change: () => void | Promise<
 }
 
 /* ---------------- orb match-cut ---------------- */
-let handed: { el: HTMLElement; until: number } | null = null;
-/** Hand a (fixed-position, page-level) orb element over to whatever opens next. It is removed if nobody takes it. */
+type LiveOrb = HTMLElement & { _spec?: OrbSpec; _live?: { time: number } | null };
+/* expiry is left to the timer in handOff (no clock comparisons: some environments report odd performance.now() jumps) */
+let handed: { el: LiveOrb } | null = null;
+let flight: { fly: LiveOrb; target: HTMLElement; done: () => void } | null = null;
+const timeOf = (el: LiveOrb | null | undefined) => (el?._live ? el._live.time : el?._spec?.t0 ?? null);
+/** Hand a (fixed-position, page-level) orb element over to whatever opens next. If nobody takes it, it fades away. */
 export function handOff(el: HTMLElement, ttl = 1500): void {
-  handed?.el.remove();
-  handed = { el, until: performance.now() + ttl };
-  // nobody took it (e.g. an edit, no "Persona siap"): it fades away
+  if (handed && handed.el !== el) handed.el.remove();
+  handed = { el: el as LiveOrb };
   setTimeout(() => { if (handed?.el === el) { handed = null; void leave(el, { scale: 0.9, dy: 0, ms: 220 }).then(() => el.remove()); } }, ttl);
 }
-/** Fly the handed-over orb onto `target` (followed every frame, e.g. while its sheet slides in), then reveal `target`.
-    Resolves at once (target visible) when there is nothing to receive. */
-export function receiveOrb(target: HTMLElement, ms = 520): Promise<void> {
+/** For receivers that draw the orb themselves (the persona forge): take the handed orb (rect + animation time) and
+    remove it. null when there is none. */
+export function takeHandOff(): { rect: DOMRect; time: number | null; spec: OrbSpec | null } | null {
+  const h = handed; handed = null;
+  if (!h || !h.el.isConnected) { h?.el.remove(); return null; }
+  const out = { rect: h.el.getBoundingClientRect(), time: timeOf(h.el), spec: h.el._spec || null };
+  h.el.remove();
+  return out;
+}
+/** A page-level live copy of an orb element at its current place / size, same spec and same animation time. */
+export function orbGhost(src: HTMLElement | null | undefined): HTMLElement | null {
+  const s = src as LiveOrb | null | undefined;
+  if (!s?._spec || !s.isConnected) return null;
+  const r = s.getBoundingClientRect();
+  if (r.width < 4 || r.height < 4) return null;
+  const g = orb(s._spec, { size: Math.round(r.width), cls: 'orb-ghost', live: !reducedMotion() }) as LiveOrb;
+  const t = timeOf(s);
+  if (g._live && t != null) g._live.time = t;
+  g.style.left = r.left.toFixed(1) + 'px'; g.style.top = r.top.toFixed(1) + 'px';
+  document.body.append(g);
+  return g;
+}
+/** Fly the handed-over orb onto `target` (followed every frame, e.g. while its sheet slides in), then reveal `target`;
+    the target takes over the animation time (no jump in the pattern). A new flight ends the previous one at once
+    (fast clicks never leave a ghost behind). Resolves at once (target visible) when there is nothing to receive. */
+export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
   const h = handed;
   handed = null;
-  if (!h || performance.now() > h.until || !h.el.isConnected) { h?.el.remove(); return Promise.resolve(); }
+  if (!h || !h.el.isConnected) { h?.el.remove(); return Promise.resolve(); }
+  flight?.done();
   const fly = h.el;
   const r0 = fly.getBoundingClientRect();
   target.style.visibility = 'hidden';
   const red = reducedMotion();
   const t0 = performance.now(), dur = red ? 1 : ms;
   return new Promise((res) => {
+    let over = false;
+    const done = () => {
+      if (over) return; over = true;
+      const t = timeOf(fly), tg = target as LiveOrb;
+      if (t != null && tg._live) tg._live.time = t;
+      target.style.visibility = '';
+      fly.remove();
+      if (flight?.fly === fly) flight = null;
+      res();
+    };
+    flight = { fly, target, done };
     const step = (now: number) => {
+      if (over) return;
       const k = Math.min(1, (now - t0) / dur), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+      if (!target.isConnected) { done(); return; }
       const r1 = target.getBoundingClientRect();
+      if (r1.width < 2) { done(); return; }
       const cx0 = r0.left + r0.width / 2, cy0 = r0.top + r0.height / 2, cx1 = r1.left + r1.width / 2, cy1 = r1.top + r1.height / 2;
       const s = (r0.width + (r1.width - r0.width) * e) / r0.width;   // one scale for both axes: always round
-      const arc = Math.sin(Math.PI * e) * -24;
+      const arc = Math.sin(Math.PI * e) * -Math.min(24, Math.hypot(cx1 - cx0, cy1 - cy0) * 0.12);
       fly.style.transform = `translate3d(${(cx0 + (cx1 - cx0) * e - cx0).toFixed(2)}px,${(cy0 + (cy1 - cy0) * e - cy0 + arc).toFixed(2)}px,0) scale(${s.toFixed(4)})`;
       if (k < 1) { requestAnimationFrame(step); return; }
-      target.style.visibility = '';
-      requestAnimationFrame(() => { fly.remove(); res(); });
+      requestAnimationFrame(done);
     };
     requestAnimationFrame(step);
   });
+}
+/** Shared element: a copy of `from` flies onto `to` (both stay where they are; `to` is hidden until it lands). */
+export function flyOrb(from: HTMLElement | null | undefined, to: HTMLElement | null | undefined, ms = 460): Promise<void> {
+  if (!to) return Promise.resolve();
+  const g = orbGhost(from);
+  if (!g) return Promise.resolve();
+  handOff(g);
+  return receiveOrb(to, ms);
+}
+/** Cross-morph: the orb element changes its look under a fading copy of the old look (no hard cut). */
+export function morphOrb(el: HTMLElement, apply: () => void, ms = 380): void {
+  const g = el.isConnected && el.style.visibility !== 'hidden' && !reducedMotion() ? orbGhost(el) : null;
+  apply();
+  if (!g) return;
+  g.style.zIndex = '15';
+  void leave(g, { dy: 0, scale: 1, ms }).then(() => g.remove());
 }

@@ -261,6 +261,8 @@
 .orb.jelly.live { background-image: none !important; }
 .orb.jelly.live::before { background: transparent; }
 .orb.empty { filter: grayscale(1) opacity(.45); }
+/* page-level copy of an orb for shared-element flights / cross-morphs (ui/transition.ts) */
+.orb.orb-ghost { position: fixed; z-index: 150; margin: 0; pointer-events: none; transform-origin: 50% 50%; will-change: transform, opacity; }
 .orb-btn { position: relative; flex-shrink: 0; border: 0; padding: 0; background: transparent; border-radius: 50%; display: grid; place-items: center; min-width: 44px; min-height: 44px; transition: transform .15s var(--ease); }
 .orb-btn:active { scale: .95; }
 .orb-btn:focus-visible { box-shadow: var(--focus); }
