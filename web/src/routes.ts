@@ -18,6 +18,8 @@ export const ROUTES: RouteDef[] = [
   { name: 'tts', label: 'TTS', title: 'Teks ke Suara', icon: 'studio', load: () => import('./screens/tts/index'), tab: true },
   { name: 'vc', label: 'Changer', title: 'Voice Changer', icon: 'changer', load: () => import('./screens/vc/index'), tab: true },
   { name: 'voices', label: 'Voices', title: 'Voices', icon: 'voices', load: () => import('./screens/voices/index'), tab: true },
+  // group call (Strix + Lena, or any personas): reached from the Chat persona sheet / menus, not a tab
+  { name: 'duo', label: 'Panggilan', title: 'Panggilan', icon: 'phone', load: () => import('./screens/duo/index'), wide: true },
   { name: 'admin', label: 'Admin', title: 'Admin', icon: 'shield', load: () => import('./screens/admin/index'), admin: true, wide: true },
 ];
 

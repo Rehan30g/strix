@@ -135,13 +135,18 @@ export class Player {
   get gainTarget(): number { return this.duckTo; }
   private setGain(v: number, sec: number) {
     this.duckTo = v;
+    const out = this.mute ? 0 : v;
     const f = this.fxg, a = this.actx;
     if (f && a) {
       const g = f.master.gain, t = a.currentTime;
       g.cancelScheduledValues(t); g.setValueAtTime(g.value, t);
-      if (sec <= 0) g.setValueAtTime(v, t); else g.linearRampToValueAtTime(v, t + sec);
-    } else this.el.volume = Math.max(0, Math.min(1, v));
+      if (sec <= 0) g.setValueAtTime(out, t); else g.linearRampToValueAtTime(out, t + sec);
+    } else this.el.volume = Math.max(0, Math.min(1, out));
   }
+  private mute = false;
+  /** Silence the output without stopping it (group call "Bisukan"): playback, clocks and captions go on. */
+  setMuted(on: boolean): void { this.mute = on; this.setGain(this.duckTo, 0.08); }
+  get muted(): boolean { return this.mute; }
   /** Lower the volume quickly (default -14 dB in 60 ms). */
   duck(to = 0.2, sec = 0.06): void { if (this.fadeT) return; this.setGain(to, sec); }
   /** Restore the volume. */
@@ -319,7 +324,7 @@ export class Player {
       const ws = actx.createWaveShaper(); ws.oversample = '2x';
       const comp = actx.createDynamicsCompressor();
       const an = actx.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.55; src.connect(an);
-      const master = actx.createGain(); master.gain.value = this.duckTo; master.connect(actx.destination);
+      const master = actx.createGain(); master.gain.value = this.mute ? 0 : this.duckTo; master.connect(actx.destination);
       src.connect(dry); dry.connect(master);
       src.connect(hp); hp.connect(lp); lp.connect(pk); pk.connect(ws); ws.connect(comp); comp.connect(wet); wet.connect(master);
       const nb = actx.createBuffer(1, actx.sampleRate * 2, actx.sampleRate), d = nb.getChannelData(0);

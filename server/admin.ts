@@ -31,6 +31,7 @@ const quotaBody = z.object({
   searchPerDay: z.number().int().min(0).max(1_000_000).nullable().optional(),
   decidePerDay: z.number().int().min(0).max(10_000_000).nullable().optional(),
   memoryPerDay: z.number().int().min(0).max(1_000_000).nullable().optional(),
+  callPerDay: z.number().int().min(0).max(100_000).nullable().optional(), // duo: persona calls (POST /api/duo/ring)
 });
 
 function inviteOut(r: InviteRow & { created_by_email?: string | null }, users: { email: string; invite_id: number }[]) {

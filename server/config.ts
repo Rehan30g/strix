@@ -106,6 +106,13 @@ export const config = {
     memoryPerDay: int(env.QUOTA_MEMORY_PER_DAY, 500), // /api/memory/commit summaries per day (not counted as LLM requests)
     memoryPerMin: int(env.RATE_MEMORY_PER_MIN, 30) || 30, // /api/memory/commit calls per minute per user
   },
+  // duo / group calls (server/duo.ts)
+  duo: {
+    maxPersonaTurns: Math.max(4, int(env.DUO_MAX_PERSONA_TURNS, 60)), // persona replies per call (callId)
+    maxChain: 4,                                                       // persona turns in a row without the user (hard cap)
+    maxPersonas: Math.min(4, Math.max(2, int(env.DUO_MAX_PERSONAS, 3))), // personas on one call besides the user
+    maxCallsPerDay: int(env.DUO_MAX_CALLS_PER_DAY, 40),               // POST /api/duo/ring per user per day
+  },
   rate: {
     globalPerMin: int(env.RATE_GLOBAL_PER_MIN, 120),
     authPerMin: int(env.RATE_AUTH_PER_MIN, 20),

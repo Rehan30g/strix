@@ -170,6 +170,23 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   privacy line, "Lupakan semuanya" (confirm) and "Lupakan kabar bersama". Deleting a custom persona also deletes its memory.
   Test hook `window.__memory()` (commit log, pending commits, `mem`).
 
+## Group calls (server contract: ../server/CONTRACT-NOTES.md "Duo / group calls", ../SPEC-DUO.md)
+- `#/duo` (`src/screens/duo/index.ts`, `duo.css`, `picker.ts`; route not a tab, tab bar hidden). Query: `call=strix,lena` (ring them in order),
+  `with=<id>` (already on the line, from a solo Chat: its last 8 solo lines are context), `caller=<id>` (a persona placed the call).
+- One room: orbs side by side (`.duo-slot`, created at `--big` px and scaled by `--k` per count; the speaking one scales up and pushes its
+  neighbours with `--dx`), captions per reply block coloured by the speaker's orb (`--spk`, name in `data-who`), event lines ("X meninggalkan
+  panggilan", "Memanggil X…"). Same DuplexMachine / decide / Captions / player / STT as Chat (Mode Percakapan, push-to-talk, text duplex, cut point
+  `interrupted`). Audio strictly sequential (player queue); the next persona's turn is requested as soon as the current line has streamed.
+- Silence: after ~7 s (12 s after a question to the user) the personas fill it (`nudge:'silence'`, max 2 in a row; server caps 4 persona turns).
+- Ringing: `lib/duo.ts duoRing` + `lib/ringtone.ts` (WebAudio, 440+480 Hz, ducked while a voice speaks); the reaction plays with who `ring:<id>`.
+- Leaving: a persona's `{end}` -> it is off the call at once (next turns), its orb fades away after its last line is heard; both gone -> end box.
+  "Tinggalkan panggilan" commits every persona (reason `duo`, or `hangup` for one that left, `duo.with`) and flies the Chat persona's orb back.
+- Orb hand-offs are keyed (`ui/transition.ts handOff(el, ttl, key)` / `receiveOrb(target, ms, key)`; `''` = the old single slot, `duo:<id>`).
+- `player.setMuted()` (NEW): silence the output without stopping it (captions keep their clock).
+- Chat: `streamChat({callable, callsMade, onCall})`; a `{call}` -> after the line is heard, `#/duo?with=<cur>&call=<target>&caller=<cur>`
+  (`ChatLog.calls` counts it). Memory sheet shows missed calls and "dari panggilan bersama" news.
+- Test hook `window.__duo()` (state, present, slots, log, stats: lat / turns / audio intervals / rings, `force(decision)`).
+
 ## Dev
 ```
 cd v2 && PORT=3300 npx tsx --env-file=.env server/index.ts              # API (DEV_FAKE_LOGIN=1 in .env)

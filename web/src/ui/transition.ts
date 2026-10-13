@@ -40,19 +40,24 @@ export async function swap(el: HTMLElement | null, change: () => void | Promise<
 /* ---------------- orb match-cut ---------------- */
 type LiveOrb = HTMLElement & { _spec?: OrbSpec; _live?: { time: number } | null };
 /* expiry is left to the timer in handOff (no clock comparisons: some environments report odd performance.now() jumps) */
-let handed: { el: LiveOrb } | null = null;
-let flight: { fly: LiveOrb; target: HTMLElement; done: () => void; p: Promise<void> } | null = null;
+/* Hand-offs are kept per key: '' = the one main orb (Chat, forge, ...); other keys let several orbs fly at once
+   (e.g. the group call: 'duo:strix', 'duo:lena'). */
+const handedBy = new Map<string, { el: LiveOrb }>();
+const flights = new Map<string, { fly: LiveOrb; target: HTMLElement; done: () => void; p: Promise<void> }>();
 const timeOf = (el: LiveOrb | null | undefined) => (el?._live ? el._live.time : el?._spec?.t0 ?? null);
 /** Hand a (fixed-position, page-level) orb element over to whatever opens next. If nobody takes it, it fades away. */
-export function handOff(el: HTMLElement, ttl = 1500): void {
-  if (handed && handed.el !== el) handed.el.remove();
-  handed = { el: el as LiveOrb };
-  setTimeout(() => { if (handed?.el === el) { handed = null; void leave(el, { scale: 0.9, dy: 0, ms: 220 }).then(() => el.remove()); } }, ttl);
+export function handOff(el: HTMLElement, ttl = 1500, key = ''): void {
+  const old = handedBy.get(key);
+  if (old && old.el !== el) old.el.remove();
+  handedBy.set(key, { el: el as LiveOrb });
+  setTimeout(() => { if (handedBy.get(key)?.el === el) { handedBy.delete(key); void leave(el, { scale: 0.9, dy: 0, ms: 220 }).then(() => el.remove()); } }, ttl);
 }
+/** Is an orb waiting to be received under `key`? */
+export const hasHandOff = (key = '') => !!handedBy.get(key)?.el.isConnected;
 /** For receivers that draw the orb themselves (the persona forge): take the handed orb (rect + animation time) and
     remove it. null when there is none. */
-export function takeHandOff(): { rect: DOMRect; time: number | null; spec: OrbSpec | null } | null {
-  const h = handed; handed = null;
+export function takeHandOff(key = ''): { rect: DOMRect; time: number | null; spec: OrbSpec | null } | null {
+  const h = handedBy.get(key) ?? null; handedBy.delete(key);
   if (!h || !h.el.isConnected) { h?.el.remove(); return null; }
   const out = { rect: h.el.getBoundingClientRect(), time: timeOf(h.el), spec: h.el._spec || null };
   h.el.remove();
@@ -74,9 +79,10 @@ export function orbGhost(src: HTMLElement | null | undefined): HTMLElement | nul
 /** Fly the handed-over orb onto `target` (followed every frame, e.g. while its sheet slides in), then reveal `target`;
     the target takes over the animation time (no jump in the pattern). A new flight ends the previous one at once
     (fast clicks never leave a ghost behind). Resolves at once (target visible) when there is nothing to receive. */
-export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
-  const h = handed;
-  handed = null;
+export function receiveOrb(target: HTMLElement, ms = 460, key = ''): Promise<void> {
+  const h = handedBy.get(key) ?? null;
+  handedBy.delete(key);
+  const flight = flights.get(key) ?? null;
   if (!h || !h.el.isConnected) {
     h?.el.remove();
     // nothing new to receive, but an orb is already flying onto this target: wait for that one
@@ -100,10 +106,10 @@ export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
       if (t != null && tg._live) tg._live.time = t;
       target.style.visibility = '';
       fly.remove();
-      if (flight?.fly === fly) flight = null;
+      if (flights.get(key)?.fly === fly) flights.delete(key);
       res();
     };
-    flight = { fly, target, done, p };
+    flights.set(key, { fly, target, done, p });
     const step = (now: number) => {
       if (over) return;
       const k = Math.min(1, (now - t0) / dur), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
@@ -122,12 +128,12 @@ export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
   return p;
 }
 /** Shared element: a copy of `from` flies onto `to` (both stay where they are; `to` is hidden until it lands). */
-export function flyOrb(from: HTMLElement | null | undefined, to: HTMLElement | null | undefined, ms = 460): Promise<void> {
+export function flyOrb(from: HTMLElement | null | undefined, to: HTMLElement | null | undefined, ms = 460, key = ''): Promise<void> {
   if (!to) return Promise.resolve();
   const g = orbGhost(from);
   if (!g) return Promise.resolve();
-  handOff(g);
-  return receiveOrb(to, ms);
+  handOff(g, 1500, key);
+  return receiveOrb(to, ms, key);
 }
 /** Cross-morph: the orb element changes its look under a fading copy of the old look (no hard cut). */
 export function morphOrb(el: HTMLElement, apply: () => void, ms = 380): void {

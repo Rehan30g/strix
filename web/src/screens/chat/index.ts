@@ -33,6 +33,8 @@ import {
   loadLog, saveLog, streamChat, visibleText, ttsText, greetingFor, langLabel, langName, sttLocale, LANGS, ACCENTS, cleanAccent, DEFAULT_VOICE, orbSpecFor, AUTO,
 } from '../../lib/persona';
 import { commitMemory, getMemory, forgetMemory, forgetShared, moodText, agoText, memoryLog, type CommitReason, type PersonaMemory } from '../../lib/memory';
+import { callable } from '../../lib/duo';
+import { pickPersona } from '../duo/picker';
 import './chat.css';
 
 /** No activity for this long = the conversation is idle: what was said goes to the persona's memory. */
@@ -511,7 +513,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         if (meta.length) rows.push(h('div', { class: 'mem-meta' }, ...meta));
         if (mem.summary) rows.push(section('Yang ia ingat', h('p', { class: 'mem-sum' }, mem.summary)));
         if (mem.facts.length) rows.push(section('Hal tentangmu', h('ul', { class: 'mem-list' }, ...mem.facts.map((f) => h('li', null, f)))));
-        if (mem.heard.length) rows.push(section('Kabar yang ia dengar', h('ul', { class: 'mem-list' }, ...mem.heard.map((e) => h('li', null, e.text, h('small', null, ` dari obrolanmu dengan ${nameOf(e.from)}, ${agoText(e.at)}`))))));
+        if (mem.missed?.length) rows.push(section('Panggilan yang tidak diangkat', h('ul', { class: 'mem-list' }, ...mem.missed.map((e) => h('li', null, e.text, h('small', null, ` ${agoText(e.at)}`))))));
+        if (mem.heard.length) rows.push(section('Kabar yang ia dengar', h('ul', { class: 'mem-list' }, ...mem.heard.map((e) => h('li', null, e.text, h('small', null, e.kind === 'duo' ? ` dari panggilan bersama (versi ${e.fromName || nameOf(e.from)}), ${agoText(e.at)}` : ` dari obrolanmu dengan ${e.fromName || nameOf(e.from)}, ${agoText(e.at)}`))))));
         if (mem.told.length) {
           const to = [...new Set(mem.told.flatMap((e) => e.to || []))].map(nameOf).join(' dan ') || 'persona lain';
           rows.push(section(`Kabar yang sampai ke ${to}`, h('ul', { class: 'mem-list' }, ...mem.told.map((e) => h('li', null, e.text, h('small', null, ` ${agoText(e.at)}`))))));
@@ -599,10 +602,14 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const live = () => myGen === gen && cur === p && !r.cut && !r.cancelled;
     const chunks = ctx.text.chunker((s) => { const start = at; at += s.length; if (live()) speakChunk(r, s, start, `${rid}:${n++}`, myGen); }, 160, 40);
     let replyText = '', verdict: Verdict | null = null, err: any = null, noMemory = false;
+    let placed: { target: string; name: string; reason: string } | null = null;
     try {
       const res = await streamChat({
         persona: p, messages: log.msgs, speak: true, signal: chatCtrl.signal, opener: o.opener,
         resumeHint: o.resumeHint, webSearch: chatPrefs().webSearch !== false,
+        // the persona may phone someone into a group call itself (once per conversation)
+        callable: callable(personas.filter((x) => x.id !== p.id)), callsMade: log.calls || 0,
+        onCall: (c) => { placed = c; },
         onText: (d, full) => { replyText = full; r.full = full; chunks.push(d); },
         onTool: (t) => { if (live()) onTool(r, t, () => chunks.flush(true)); },
       });
@@ -642,7 +649,26 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       retry = () => { if (!busy && cur === p) reply(p, o); };
     }
     if (verdict) { await player.waitIdle(60000); if (cur === p) showVerdict(verdict); }
+    const call = placed as { target: string; name: string; reason: string } | null;
+    if (call && !verdict) {
+      // "hold on, I'm calling X": once the line is heard, the chat becomes a group call (the persona stays on the line)
+      log.calls = (log.calls || 0) + 1; saveLog(p.id, log);
+      await player.waitIdle(30000);
+      if (myGen === gen && cur === p && personas.some((x) => x.id === call.target)) { goCall(call.target, { with: p, caller: p.id }); return; }
+    }
     kick(); paintState();
+  }
+  /** Ring someone into a group call (#/duo). `with` stays on the line; the orbs fly over to the call room. */
+  function goCall(target: string, o: { with?: Persona | null; caller?: string; fromOrb?: HTMLElement | null } = {}) {
+    if (o.with && theOrb.isConnected) { const g = orbGhost(theOrb); if (g) handOff(g, 1800, 'duo:' + o.with.id); }
+    if (o.fromOrb) { const g = orbGhost(o.fromOrb); if (g) handOff(g, 1800, 'duo:' + target); }
+    const q = [o.with ? 'with=' + encodeURIComponent(o.with.id) : '', 'call=' + encodeURIComponent(target), o.caller ? 'caller=' + encodeURIComponent(o.caller) : ''].filter(Boolean).join('&');
+    ctx.navigate('duo?' + q);
+  }
+  async function openCallPicker() {
+    const me = cur;
+    const pick = await pickPersona(ctx, { title: 'Telepon siapa?', rows: personas.filter((x) => x.id !== me?.id).map((x) => ({ p: x })), note: `${me ? `${me.name} tetap di telepon. ` : ''}Yang ditelepon bereaksi dulu, lalu memutuskan mengangkat atau tidak.` });
+    if (pick) goCall(pick.p.id, { with: me, fromOrb: pick.orbEl });
   }
 
   /* ================= tools (web search) ================= */
@@ -1012,6 +1038,22 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       const rows: Node[] = [];
       if (!loaded) rows.push(...[0, 1, 2].map(() => h('div', { class: 'skel', style: 'height:60px;margin:4px 0' })));
       if (charsErr) rows.push(h('div', { class: 'notice bad', html: S('alert') }, h('span', null, `Gagal memuat persona: ${charsErr}`)));
+      // group call with the two built-ins (the one you are talking to stays on the line)
+      const sx = personas.find((x) => x.id === 'strix'), ln = personas.find((x) => x.id === 'lena');
+      if (sx && ln) {
+        const o1 = orb(orbSpecFor(sx), { size: 34 }), o2 = orb(orbSpecFor(ln), { size: 34 });
+        const duoB = h('button', { type: 'button', class: 'ps-main ps-duo' }, h('span', { class: 'ps-duo-orbs' }, o1, o2),
+          h('span', { class: 'ps-t' }, h('b', null, 'Panggilan berdua'), h('span', null, `${sx.name} dan ${ln.name} di satu panggilan`)), h('span', { class: 'ps-on', html: S('phone') }));
+        duoB.onclick = () => {
+          picking = true;
+          const g1 = orbGhost(o1), g2 = orbGhost(o2);
+          if (g1) handOff(g1, 1800, 'duo:strix'); if (g2) handOff(g2, 1800, 'duo:lena');
+          m.close();
+          const other = cur?.id === 'strix' ? 'lena' : cur?.id === 'lena' ? 'strix' : '';
+          ctx.navigate(other ? `duo?with=${cur!.id}&call=${other}` : 'duo?call=strix,lena');
+        };
+        rows.push(h('div', { class: 'ps-row', role: 'listitem' }, duoB));
+      }
       for (const p of personas) {
         const rowOrb = orb(orbSpecFor(p), { size: 46 });
         if (cur?.id === p.id) curRowOrb = rowOrb;
@@ -1067,6 +1109,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       p.builtin ? { label: 'Atur suara & bahasa', icon: 'sliders', run: () => tunePersona(p) } : { label: 'Edit', icon: 'edit', run: () => editPersona(p.custom!) },
       { label: 'Studio Bola', icon: 'palette', run: () => orbStudio(p) },
       { label: 'Ingatan', icon: 'memory', run: () => { openMemorySheet(p); } },
+      { label: cur && cur.id !== p.id ? `Telepon (${cur.name} ikut)` : 'Telepon', icon: 'phone', run: () => goCall(p.id, { with: cur && cur.id !== p.id ? cur : null }) },
     ];
     if (!p.builtin) out.push({ label: 'Hapus', icon: 'trash', cls: 'danger', run: () => removePersona(p) });
     return out;
@@ -1116,6 +1159,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       }),
       h('div', { class: 'menu-sep' }),
       ui.menuItem('Ganti persona', 'users', () => openPersonaSheet()),
+      ui.menuItem('Telepon…', 'phone', () => { void openCallPicker(); }),
       ...actions(p).filter((a) => a.icon !== 'trash').map((a) => ui.menuItem(a.label === 'Edit' ? 'Edit persona' : a.label, a.icon, a.run)),
       ui.menuItem('Transkrip', 'history', openTranscript),
       ui.menuItem('Mulai ulang percakapan', 'refresh', async () => {

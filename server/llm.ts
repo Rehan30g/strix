@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { characters, baseRules, audioTagRules, noTagRules, isEnglish } from './characters.js';
 import { addTokens, chargeLlm, chargeSearch, limitsFor, QuotaError, resetAt } from './quota.js';
-import { builtin, memoryContext, memoryKey, noteHangup } from './memory.js';
+import { builtin, memoryContext, memoryKey, noteHangup, CONNECTED } from './memory.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -77,7 +77,7 @@ export function sseHeaders(reply: FastifyReply) {
 
 /* ---------------- tools ---------------- */
 
-const toolDefs: Record<string, unknown> = {
+export const toolDefs: Record<string, unknown> = {
   end_interview: {
     type: 'function',
     function: {
@@ -112,7 +112,7 @@ const toolDefs: Record<string, unknown> = {
   },
 };
 
-const END_CALL_RULES = `
+export const END_CALL_RULES = `
 
 ENDING THE CALL: you have a tool end_call that hangs up on the user and locks the conversation until they start a new one. Use it ONLY when, in character, you have genuinely had enough: the user keeps pushing, insulting or provoking you after you already warned them or showed you were upset, or you have clearly decided you will not go on talking with them. Never for a single rude line, mild discomfort, or a topic you can simply refuse. First say your short final line in the same reply (angry, cold, tired or simply done, whatever fits your mood), then call end_call in that same turn with a one-sentence neutral reason for the user's screen. After you call it the user cannot reply.
 
@@ -136,7 +136,7 @@ const webSearchTool = {
 
 const MAX_SEARCHES_PER_TURN = 2;
 const SEARCH_TIMEOUT_MS = 20_000;
-const CUT_MARK = '[cut off by the user here]';
+export const CUT_MARK = '[cut off by the user here]';
 
 /** Persona-wide rules for the web_search tool (all personas, in character, user's language). */
 const webRules = (today: string) => `
@@ -148,8 +148,49 @@ LOOKING THINGS UP: you can search the web with the tool web_search. Today's date
 - If the search failed or is unavailable, say so briefly in character with a small apology; answer from what you know only if you are confident, otherwise admit you don't know.
 - At most ${MAX_SEARCHES_PER_TURN} searches per reply.`;
 
+/* ---------------- call_persona: a persona phones another persona into the call (server/duo.ts) ---------------- */
+/** Who a persona may phone: sent by the client (built-ins + the user's own personas), validated here. */
+export const callableSchema = z.array(z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+  name: z.string().max(200).transform(oneLineLazy).pipe(z.string().min(1).max(40)),
+  description: z.string().max(4000).optional().nullable().transform((v) => oneLineLazy(v ?? '').slice(0, 220)),
+})).max(8);
+export type Callable = z.infer<typeof callableSchema>[number];
+function oneLineLazy(v: string) { return oneLine(v); }
+
+/** The call_persona tool for these targets (ids are the only accepted values). */
+export function callPersonaTool(targets: Callable[]) {
+  return {
+    type: 'function',
+    function: {
+      name: 'call_persona',
+      description: 'Phone one of the people listed under CALLING SOMEONE and add them to this call (the user stays on the line). Say your one short spoken line first in the same reply, then call this. Rare: see CALLING SOMEONE.',
+      parameters: {
+        type: 'object',
+        properties: {
+          target: { type: 'string', enum: targets.map((t) => t.id), description: 'id of the person to call' },
+          reason: { type: 'string', description: 'One short neutral sentence: why you are calling them (shown on screen).' },
+        },
+        required: ['target', 'reason'],
+      },
+    },
+  };
+}
+/** Prompt rules for call_persona (`enemyIds` = people this persona is feuding with). */
+export function callRules(targets: Callable[], enemyIds: string[] = []) {
+  const list = targets.map((t) => `- ${t.name} (id ${t.id})${enemyIds.includes(t.id) ? ', your enemy' : ''}${t.description ? `: ${t.description}` : ''}`).join('\n');
+  return `
+
+CALLING SOMEONE: you have a phone. With the tool call_persona you can ring one of these people and bring them into this call; the user stays on the line and hears everything:
+${list}
+- Use it rarely, and only when it truly makes sense for you in this moment, in character and in your mood: you want to vent to someone, you got provoked into proving a point, you are curious, you want backup, or you need help with something they know. Never just because a name came up. At most ONE call in this whole conversation.
+- Someone you are feuding with you almost never call first, unless you are seriously provoked or the user has genuinely talked you into it.
+- If the user asks you to call someone, you decide in character: agree and do it, refuse, or grumble and do it anyway.
+- When you do it: in the SAME reply, first say ONE short spoken line (for example "Hold on, I'm calling her right now." in your own style), then call call_persona with their id. Never call someone without saying something first.`;
+}
+
 /** Context for a reply right after the user cut the assistant off (duplex voice). In character, no rules leaked. */
-function interruptedNote(cut: { spoken: string; unspoken: string }, hint: 'continue' | 'rephrase' | 'drop' | null) {
+export function interruptedNote(cut: { spoken: string; unspoken: string }, hint: 'continue' | 'rephrase' | 'drop' | null) {
   const said = cut.spoken ? `You only got as far as: "${cut.spoken.slice(-600)}"` : 'You had not said anything yet';
   const unsaid = cut.unspoken && hint !== 'drop' ? ` What you were about to say next (they never heard it): "${cut.unspoken.slice(0, 600)}".` : '';
   const how = hint === 'continue'
@@ -170,14 +211,14 @@ const HANGUP_RE = /\b(hang(?:ing)? up|i'?m (?:done|out of here|leaving)|we'?re (
 const NEGATED_RE = /\b(won'?t|will not|wouldn'?t|not (?:going|gonna)|never|don'?t|do not|didn'?t|can'?t|cannot|promise|swear|no longer|rather not|refuse|instead of|stay|staying|not now|if you)\b/i;
 /** Did the persona's reply announce that THEY are ending / leaving the call right now? Pattern first (cheap), then one tiny
     confirmation from the decision model; any doubt or failure = do NOT hang up. */
-async function announcesHangup(text: string, lastUser: string, signal: AbortSignal): Promise<boolean> {
+export async function announcesHangup(text: string, lastUser: string, signal: AbortSignal): Promise<boolean> {
   const tail = text.slice(-220);
   const m = HANGUP_RE.exec(tail);
   if (!m) return false;
   if (NEGATED_RE.test(tail.slice(Math.max(0, m.index - 50), m.index + m[0].length))) return false;
   try {
     const r = await openrouter({
-      model: config.decisionModel, stream: false, temperature: 0, max_tokens: 20, reasoning: { enabled: false },
+      model: config.decisionModel, stream: false, temperature: 0, max_tokens: 20, reasoning: { enabled: false }, provider: { sort: 'latency', allow_fallbacks: true },
       messages: [
         { role: 'system', content: 'You judge one line of a spoken conversation. Reply ONLY with JSON {"ending":true} or {"ending":false}. ending is true ONLY if the speaker, in this very reply, announces that THEY are hanging up / leaving / ending the call or conversation RIGHT NOW. It is false for promises not to hang up, refusals to leave, conditions or threats ("if you keep going I will hang up"), questions, and talk about the past.' },
         { role: 'user', content: `The other person last said: ${lastUser.slice(0, 300)}\nThe speaker's reply: ${tail}` },
@@ -188,6 +229,28 @@ async function announcesHangup(text: string, lastUser: string, signal: AbortSign
     const raw = String(j?.choices?.[0]?.message?.content ?? '');
     const o = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
     return o.ending === true;
+  } catch { return false; }
+}
+
+// the persona says it is phoning someone now ("hold on, I'm calling her", "fine, ringing him", "alright... hold on")
+const CALLING_RE = /\b(call(?:ing)?|ring(?:ing)?|bell|buzz|phon(?:e|ing)|dial(?:l?ing)?|telepon|nelpon|hubungi)\b|\b(hold on|hang on|one sec|give me a sec|bentar|tunggu)\b/i;
+/** Did the persona's reply say it is placing a call RIGHT NOW (but it forgot the call_persona tool)? Pattern first, then
+    one tiny confirmation from the decision model; any doubt = no call. */
+export async function announcesCall(text: string, lastUser: string, signal: AbortSignal): Promise<boolean> {
+  const tail = text.slice(-240);
+  if (!CALLING_RE.test(tail)) return false;
+  try {
+    const r = await openrouter({
+      model: config.decisionModel, stream: false, temperature: 0, max_tokens: 20, reasoning: { enabled: false }, provider: { sort: 'latency', allow_fallbacks: true },
+      messages: [
+        { role: 'system', content: 'You judge one line of a spoken conversation. Reply ONLY with JSON {"calling":true} or {"calling":false}. calling is true if the speaker, in this very reply, agrees to phone someone now, as part of this conversation (e.g. "fine, hold on, I\'m ringing her", "hang on, I\'ll give her a ring", "sure, I can give him a bell...", "alright... hold on" right after being asked to call someone). False for refusals, maybes, conditions ("if you keep this up I\'ll call her"), plans for another day, or just talking about calls.' },
+        { role: 'user', content: `The other person last said: ${lastUser.slice(0, 300)}\nThe speaker's reply: ${tail}` },
+      ],
+    }, AbortSignal.any([signal, AbortSignal.timeout(2500)]), 'Strix call check');
+    if (!r.ok) return false;
+    const j: any = await r.json();
+    const o = JSON.parse(String(j?.choices?.[0]?.message?.content ?? '').match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+    return o.calling === true;
   } catch { return false; }
 }
 
@@ -261,16 +324,16 @@ export const oneLine = (v: string) => v.normalize('NFKC').replace(/[\p{Cc}\p{Cf}
 export const multiLine = (v: string) => v.normalize('NFKC').replace(/\r\n?/g, '\n')
   .replace(/\p{Cf}|(?![\n\t])\p{Cc}/gu, '').replace(/`{3,}|"{3,}|<{2,}|>{2,}/g, '').replace(/-{3,}/g, '-').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 export const cleanLang = (v: string | null | undefined) => oneLine(v ?? '').replace(/[^\p{L}\s()-]/gu, '').trim().slice(0, 30);
-const personaSchema = z.object({
+export const personaSchema = z.object({
   name: z.string().max(200).transform(oneLine).pipe(z.string().min(1, 'name required').max(40)),
   description: z.string().max(4000).transform(multiLine).pipe(z.string().min(1, 'description required').max(1500)),
   accent: z.string().max(200).optional().nullable().transform((v) => oneLine(v ?? '').replace(/[^\p{L}\s,'-]/gu, '').trim().slice(0, 40)),
   language: z.string().max(200).optional().nullable().transform(cleanLang),
   tools: z.array(z.enum(TOOL_NAMES)).max(TOOL_NAMES.length).optional().nullable(),
 });
-type CustomPersona = z.infer<typeof personaSchema>;
+export type CustomPersona = z.infer<typeof personaSchema>;
 
-function customPersonaPrompt(p: CustomPersona) {
+export function customPersonaPrompt(p: CustomPersona) {
   const endTool = p.tools?.includes('end_interview')
     ? `\n\nYou can permanently end this conversation with the tool end_interview (decision "rejected" or "passed", a one-sentence reason and 2-3 sentences of candid feedback). Use it only when the character would truly end things (the user is abusive, or the scene reaches a clear verdict), and say a short closing line in the same reply.`
     : '';
@@ -305,6 +368,9 @@ const chatBody = z.object({
   opener: z.boolean().optional(),
   tools: z.object({ web: z.boolean().optional() }).optional().nullable(),
   resumeHint: z.enum(['continue', 'rephrase', 'drop']).optional().nullable(),
+  // call_persona: who this persona may phone into a call (server/duo.ts) and how many calls it already placed here
+  callable: callableSchema.optional().nullable(),
+  callsMade: z.number().int().min(0).max(100).optional(),
   audioTags: z.boolean().optional().default(true),
   charName: z.string().max(100).optional().nullable(),
   thinking: z.boolean().optional(),
@@ -381,6 +447,10 @@ export async function llmRoutes(app: FastifyInstance) {
     // never on the opening line of a new call
     const hangUp = !opener && !tools.includes('end_interview');
     const toolNames = hangUp ? [...tools, 'end_call'] : tools;
+    // call_persona: at most one outgoing call per conversation, never on the opener, never itself
+    const selfId = char?.id ?? memKey ?? '';
+    const callTargets = opener || (b.callsMade ?? 0) >= 1 || limitsFor(req.user!).callPerDay <= 0 ? []
+      : (b.callable ?? []).filter((t) => (memoryKey(t.id) ?? t.id) !== selfId).slice(0, 8);
     // web_search: on by default for chat; the client can turn it off with tools:{web:false}; admin limit 0 disables it
     const web = !opener && (b.tools?.web ?? true) && limitsFor(req.user!).searchPerDay > 0;
     const today = new Date().toISOString().slice(0, 10);
@@ -404,7 +474,8 @@ export async function llmRoutes(app: FastifyInstance) {
       + (accent && !ownAccent
         ? `\n\nACCENT: the character speaks with a ${accent} accent${char?.ownAccentRules ? ' (this replaces any accent-specific wording described above)' : ''}. Keep the wording plain, natural and everyday, like a TV show script: do NOT use rare, stereotypical or cartoonish slang for the accent (no "g'day", "righto", "beauty", "crikey", "ripper" and the like); at most a very common local word, rarely. Keep spelling standard, do not write phonetic spelling, and never mention the accent. The voice engine adds the actual accent automatically, so do NOT write any accent tag yourself.`
         : '')
-      + (mem?.block ?? '');
+      + (mem?.block ?? '')
+      + (callTargets.length ? callRules(callTargets, char ? (CONNECTED[char.id] ?? []) : []) : '');
     const kept = (opener ? [] : b.messages)
       .slice(-40)
       .filter((m) => ['user', 'assistant'].includes(m.role) && (typeof m.content === 'string' || (m.role === 'assistant' && m.interrupted)));
@@ -461,8 +532,8 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
     const user = req.user!;
     const userId = user.id;
     const convo: any[] = [{ role: 'system', content: system + fewShot + (web ? webRules(today) : '') + interruptNote }, ...history];
-    const open = (withWeb: boolean, forceSearch = false, forceTool: 'web_search' | 'end_call' = 'web_search') => {
-      const defs = forceSearch ? [forceTool === 'end_call' ? toolDefs.end_call : webSearchTool] : [...toolNames.map((n) => toolDefs[n]), ...(withWeb ? [webSearchTool] : [])];
+    const open = (withWeb: boolean, forceSearch = false, forceTool: 'web_search' | 'end_call' | 'call_persona' = 'web_search') => {
+      const defs = forceSearch ? [forceTool === 'end_call' ? toolDefs.end_call : forceTool === 'call_persona' ? callPersonaTool(callTargets) : webSearchTool] : [...toolNames.map((n) => toolDefs[n]), ...(withWeb ? [webSearchTool] : []), ...(callTargets.length ? [callPersonaTool(callTargets)] : [])];
       return openrouter({
         model,
         stream: true,
@@ -557,6 +628,15 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
             else await forced.text().catch(() => '');
           } catch { /* aborted or upstream failure: just end the turn */ }
         }
+        // the persona agreed to phone someone ("alright... hold on") but forgot call_persona: place the call for it
+        else if (callTargets.length && !calls.length && !webCalls.length && !ac.signal.aborted && await announcesCall(text, lastUserText, ac.signal)) {
+          try {
+            convo.push({ role: 'assistant', content: text });
+            const forced = await open(false, true, 'call_persona');
+            if (forced.ok && forced.body) allCalls.push(...(await relay(forced, '', true)).calls.filter((c) => c.name === 'call_persona').slice(0, 1));
+            else await forced.text().catch(() => '');
+          } catch { /* aborted or upstream failure: no call */ }
+        }
         if (!webCalls.length || !web || ac.signal.aborted) break;
         // never search silently: if the model said nothing first, say a short line for it
         if (!text.trim()) {
@@ -620,6 +700,12 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
           break;
         }
       }
+      // call_persona -> the client starts ringing the target (the persona said its line first; if not, one is said for it)
+      const placed = callTargets.length && !ac.signal.aborted ? parseCall(allCalls, callTargets) : null;
+      if (placed) {
+        if (!spokenSoFar.trim()) send({ t: `${tags ? '[hesitates] ' : ''}Hold on, I'm calling ${placed.name}.` });
+        send({ call: placed });
+      }
       // end_interview tool call -> send decision to client, the client locks the conversation
       for (const c of allCalls) {
         if (c.name === 'end_call' && hangUp) {
@@ -642,4 +728,17 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
     })();
     return reply;
   });
+}
+
+/** The first valid call_persona call among `calls` -> {target, name, reason}; an unknown target is rejected (logged, dropped). */
+export function parseCall(calls: Array<{ name: string; args: string }>, targets: Callable[]) {
+  for (const c of calls) {
+    if (c.name !== 'call_persona') continue;
+    let a: any = {};
+    try { a = JSON.parse(c.args || '{}'); } catch { /* broken args */ }
+    const t = targets.find((x) => x.id === String(a.target ?? ''));
+    if (!t) { console.warn('call_persona: rejected target', JSON.stringify(String(a.target ?? '').slice(0, 64))); continue; }
+    return { target: t.id, name: t.name, reason: oneLine(String(a.reason ?? '')).slice(0, 200) };
+  }
+  return null;
 }

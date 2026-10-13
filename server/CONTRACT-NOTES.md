@@ -12,7 +12,7 @@ frontend must know. All routes are under `/api`, JSON unless noted. Cookies are 
 | 403 | `{error:'suspended'}` | suspended account (`/me` still works and shows `status:'suspended'`) |
 | 403 | `{error:'admin_only'}` | non-admin on `/admin/*` |
 | 403 | `{error:'bad_origin'}` | cross-origin write (see Origin rule) |
-| 429 | `{error:'quota', kind:'llm'\|'tts'\|'clone'\|'vc'\|'stt'\|'decide'\|'memory', resetAt:string\|null}` | per-user quota; `resetAt` ISO (null for `clone`). Kind `search` never comes as HTTP 429: it arrives inside the `/chat` SSE stream (see Chat tools & duplex) |
+| 429 | `{error:'quota', kind:'llm'\|'tts'\|'clone'\|'vc'\|'stt'\|'decide'\|'memory'\|'call', resetAt:string\|null}` | per-user quota; `resetAt` ISO (null for `clone`). Kind `search` never comes as HTTP 429: it arrives inside the `/chat` SSE stream (see Chat tools & duplex) |
 | 429 | `{error:'rate_limited', retryAfter:'NN seconds'}` | IP rate limit (**different from quota** — check `error`) |
 | 400 | `{error:'validation', issues?, message?}` | zod/body validation |
 | 413 | `{error:'body_too_large'}` / `{error:'too_large'}` / `{error:'file_too_large', maxMb}` | size limits |
@@ -234,6 +234,57 @@ Per user and per persona, on the server (synced across devices; never visible to
   baru" closes only the local log; the memory stays. Sheet "Ingatan" (⋮ menu / persona list menu) shows it and forgets it.
 - Cost (measured, deepseek-v4.1-flash): one commit ~950-1150 prompt + ~330-380 completion tokens, ~1.6-3.2 s; the memory block
   adds ~250-600 prompt tokens to every chat turn of a persona with memory; an opener is one normal chat request.
+
+## Duo / group calls (NEW) - server/duo.ts, client web/src/screens/duo (SPEC-DUO.md)
+The user and 1-`DUO_MAX_PERSONAS` (3) personas on ONE voice call. Personas = built-ins or the user's own custom personas.
+- **Participant** (both endpoints): `{id, kind:'builtin'|'custom', language?, persona?:{name, description, accent?, language?, voiceId?}}`.
+  Built-in: `id` = `strix|lena` (`stripe` alias), `language` = the user's per-persona override (omit = mirror the user). Custom: `persona`
+  is validated like `/chat` `persona` (same sanitising), `id` = its client id (never a built-in id -> 400), `voiceId` checked like `/tts`
+  (403 `voice_forbidden`). Relationships: Strix <-> Lena use their own backstory (exes, feud); any other pair gets the other's short bio and
+  "you do not know them unless your description says so" (or "you met on an earlier call" once they have been on a committed call together).
+- `POST /api/duo/turn` (SSE). Body: `{callId:[A-Za-z0-9_-]{6,64}, participants:[Participant] (everyone who has been on the call), present:[id]
+  (still on it), messages:[{role:'user'|'assistant'|'event', speaker?:id, content<=4000, interrupted?:{spokenText, unspokenText}}] (<=400, last 40 used),
+  opener?, nudge?:'silence', speaker?:id (the previous {next}), join?:{id, caller:'user'|id} (that persona just picked up: it speaks first),
+  resumeHint?:'continue'|'rephrase'|'drop', callable?:[{id,name,description}] (<=8, who a persona may phone)}`.
+  `event` lines are short neutral notes the client adds ("Lena left the call.", "Mia picked up (called by the user).").
+  - **Director** (never charged): rules first - `join` -> that persona; user named someone -> that one; the persona the user just cut off
+    answers; one persona -> it; otherwise the decision model (`OPENROUTER_DECISION_MODEL`, JSON, 1.1 s timeout) while the most likely
+    speaker's reply is already being generated (speculative; dropped and restarted only if the director picks someone else).
+    After a persona line: someone named / a persona just left -> the other(s); 3 persona lines without the user -> `user`; else the decision model.
+    Never the same persona twice in a row unless it is alone; silence `nudge` -> the persona that did not speak last fills it.
+  - SSE: `{speaker:id, chain, turn, director:{source,ms}}` first, then `{t}` deltas (never a `Name:` label: a leading label is stripped,
+    a later one ends the line), optional `{end:{decision:'hangup', reason, speaker}}` (that persona LEFT the call; stored at once as a hang-up
+    in its memory), optional `{call:{target, name, reason, caller}}` (it phones someone: start ringing), then `{next:'user'|id, chain, source,
+    ms:{first,total}}`, `[DONE]`. Plain JSON instead of SSE: `{next:'user', chain, capped:'chain'}` (4 persona turns in a row without the user,
+    counted on the server per `callId` too) or `{next:'user', reason:'nobody'}`.
+  - Errors: 409 `{error:'duo_limit', limit:'call', max}` (`DUO_MAX_PERSONA_TURNS`, default 60 persona replies per `callId`),
+    409 `{error:'duo_limit', limit:'personas', max}`, 429 quota `llm`, 400 validation, 403 `voice_forbidden`.
+  - Cost: each persona reply = 1 LLM request (charged before streaming; refunded only if the upstream never answered). Director, leave /
+    call safety checks: decision model, not charged. No web search in duo. Each persona sees its own prompt + the GROUP CALL block
+    (named transcript, who is on the line, very short lines, never a name label) + its own memory block.
+- `POST /api/duo/ring` (JSON). Body: `{callId, callee:Participant, caller:'user'|id (a persona in present), present:[Participant] (on the call now,
+  may be empty), recent?:[{who,text}] (<=10, context only)}`. -> `{decision:'answer'|'decline'|'ignore'|'off', rings:1-4, reaction, attempt,
+  maxAttempts:3, p, why:[..], ms, missed?}`. `reaction` = ONE in-character line with [audio tags] the callee says while it rings (speak it
+  with the callee's voice before it picks up). Decision = weighted roll: user calling 0.86 / persona 0.75; the enemy calling 0.22; the enemy on
+  the call x0.6; remembered anger/coldness/hurt toward the user (decayed, memory.ts) up to -0.55; warm +; hung up on the user < 3 h -0.2;
+  every retry +0.2; then chance. `decline`/`ignore` is remembered by the callee (shared_events kind `missed`, also heard by a persona caller).
+  3 attempts per callee per `callId`, then `{decision:'off'}` (no charge). Cost: 1 LLM request + 1 call (`DUO_MAX_CALLS_PER_DAY` 40, admin
+  override `callPerDay`, 429 `{error:'quota', kind:'call'}`; refunded if the LLM quota check fails). 409 `duo_limit personas` when full.
+  Dev only (`DEV_FAKE_LOGIN`, not production): `force:'answer'|'decline'|'ignore'` for tests.
+- **call_persona tool** (also in `POST /api/chat`): send `callable:[{id,name,description}]` (+ `callsMade` in /chat; duo counts per `callId`).
+  The persona may ring ONE of them (never itself / someone on the call), at most once per conversation, rarely and in character (an enemy
+  almost never first); it says one line first. If it says it is calling ("alright... hold on") but forgets the tool, the server confirms with
+  the decision model and places the call. SSE `{call:{target, name, reason}}` (an unknown target is rejected server-side and never emitted).
+  The client then rings `target` with `caller` = that persona (the chat becomes a group call; the persona stays on the line).
+- `/me` quota has `call:{used,limit}`.
+- Memory: commit per persona with `reason:'duo'` (or `'hangup'` for a persona that left) and `duo:{with:[{id,name}]}`; assistant messages carry
+  `speaker`. The summariser writes it from that persona's side; events marked visibleToOthers become shared_events `kind:'duo'` for the others
+  on the call ("you were there"). `persona_links` remembers who has been on a committed call together: custom personas share news only with
+  those. `GET /api/memory/:id` adds `missed:[{id,text,at}]` and `heard[].kind|fromName`, `told[].kind|toNames`. "Lupakan" also removes the
+  persona from other events' audience and its links.
+- Measured (port 5400, deepseek-v4.1-flash, 2026-10-13): first text of a persona line 1.0-2.5 s server-side (rule-picked ~1.0-1.6 s, with
+  the director ~2.1-2.5 s before speculation); user's end of speech / Enter -> first audible word in the browser 2.2-4.3 s (typical ~3 s,
+  TTS start included); ring decision + reaction 1.5-2.4 s; 1-4 LLM requests per user exchange (each persona line = 1), usually 2-3.
 
 ## Persona assist (NEW) - AI help writing a custom persona
 - `POST /api/persona/assist` body `{mode:'research'|'refine', idea?:string(<=500), draft?:{name?,description?,accent?,language?}, language?}`

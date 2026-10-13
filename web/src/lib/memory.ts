@@ -1,13 +1,15 @@
 /* Cross-conversation memory of chat personas (server: /api/memory, see server/CONTRACT-NOTES.md "Memory").
    Plain fetch on purpose: memory is a background nicety, a failure must stay silent (no global toasts / quota events). */
 
-export type CommitReason = 'hangup' | 'restart' | 'switch' | 'idle';
+export type CommitReason = 'hangup' | 'restart' | 'switch' | 'idle' | 'duo';
 export interface MemoryMood { label: string; intensity: number; intensityNow: number; nowLabel?: string; reason: string; at: string | null }
-export interface MemoryEvent { id: number; text: string; at: string | null; from?: string; to?: string[] }
+export interface MemoryEvent { id: number; text: string; at: string | null; from?: string; to?: string[]; fromName?: string; toNames?: string[]; kind?: 'solo' | 'duo' | 'missed' }
 export interface PersonaMemory {
   personaId: string; exists: boolean; summary: string; facts: string[]; mood: MemoryMood | null;
   lastEndAt: string | null; lastEndReason: string | null; lastEndNote: string | null; turns: number; updatedAt: string | null;
   heard: MemoryEvent[]; told: MemoryEvent[];
+  /** calls this persona did not take (declined / let ring), last 7 days */
+  missed?: MemoryEvent[];
 }
 
 /** Debug / test hook: last commit results. */
@@ -18,14 +20,16 @@ const TAGS = /\[[^\]]{0,60}\]/g;
 /** POST /api/memory/commit. Never throws; resolves false on any failure (the chat goes on regardless). */
 export async function commitMemory(a: {
   personaId: string; personaName: string; reason: CommitReason; hangupReason?: string;
-  messages: Array<{ role: string; content: string }>; keepalive?: boolean; timeoutMs?: number;
+  messages: Array<{ role: string; content: string; speaker?: string }>; keepalive?: boolean; timeoutMs?: number;
+  /** group call: who else was on it (assistant messages then carry speaker) */
+  duo?: { with: Array<{ id: string; name: string }> };
 }): Promise<boolean> {
   const t0 = performance.now();
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), a.timeoutMs ?? 12_000);
   const messages = a.messages
     .filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
-    .map((m) => ({ role: m.role, content: m.content.replace(TAGS, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200) }))
+    .map((m) => ({ role: m.role, content: m.content.replace(TAGS, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200), ...(m.speaker ? { speaker: m.speaker } : {}) }))
     .filter((m) => m.content)
     .slice(-40);
   let status = 0, ok = false, skipped: string | undefined;
@@ -36,6 +40,7 @@ export async function commitMemory(a: {
       body: JSON.stringify({
         personaId: a.personaId, personaName: a.personaName.slice(0, 40), reason: a.reason, messages,
         ...(a.reason === 'hangup' ? { hangup: { reason: (a.hangupReason || '').slice(0, 300) } } : {}),
+        ...(a.duo ? { duo: { with: a.duo.with.slice(0, 4).map((w) => ({ id: w.id, name: w.name.slice(0, 40) })) } } : {}),
       }),
     });
     status = r.status;

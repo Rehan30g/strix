@@ -66,7 +66,7 @@ export interface ChatMsg {
 }
 export interface Verdict { decision: 'passed' | 'rejected' | 'hangup'; reason?: string; feedback?: string }
 /** `mem` = how many of `msgs` were already sent to /api/memory/commit (the next commit sends only the rest). */
-export interface ChatLog { msgs: ChatMsg[]; verdict?: Verdict | null; mem?: number }
+export interface ChatLog { msgs: ChatMsg[]; verdict?: Verdict | null; mem?: number; /** calls this persona placed itself (call_persona, max 1) */ calls?: number }
 
 export const LANGS: Array<[string, string, string, string]> = [
   // key, label (UI), English name (prompt), speech-recognition locale
@@ -207,7 +207,7 @@ export const logKey = (id: string) => 'chat.log.' + id;
 export const loadLog = (id: string): ChatLog => settings.local.get<ChatLog>(logKey(id), { msgs: [] });
 export function saveLog(id: string, log: ChatLog) {
   const cut = Math.max(0, log.msgs.length - 60);   // only the last 60 are kept on the device; `mem` follows the cut
-  settings.local.set(logKey(id), { msgs: log.msgs.slice(cut), verdict: log.verdict || null, mem: Math.max(0, (log.mem || 0) - cut) });
+  settings.local.set(logKey(id), { msgs: log.msgs.slice(cut), verdict: log.verdict || null, mem: Math.max(0, (log.mem || 0) - cut), ...(log.calls ? { calls: log.calls } : {}) });
 }
 
 const safeUrl = (u: unknown) => { try { const x = new URL(String(u)); return x.protocol === 'https:' || x.protocol === 'http:' ? x.href : ''; } catch { return ''; } };
@@ -234,10 +234,14 @@ export async function streamChat(a: {
   opener?: boolean;
   /** false = no cross-conversation memory (the intro tour's demo line) */
   memory?: boolean;
-}): Promise<{ reply: string; verdict: Verdict | null; noMemory?: boolean }> {
+  /** who this persona may phone into a group call (tool call_persona) and how many calls it already placed */
+  callable?: Array<{ id: string; name: string; description: string }>; callsMade?: number;
+  onCall?: (c: { target: string; name: string; reason: string }) => void;
+}): Promise<{ reply: string; verdict: Verdict | null; noMemory?: boolean; call?: { target: string; name: string; reason: string } | null }> {
   const p = a.persona;
   const messages = a.opener ? [] : a.messages.filter((m) => m.content.trim() || m.interrupted).map((m) => ({ role: m.role, content: m.content.trim() || '…', ...(m.interrupted ? { interrupted: m.interrupted } : {}) }));
   let reply = '', verdict: Verdict | null = null, err: string | null = null, noMemory = false;
+  let call: { target: string; name: string; reason: string } | null = null;
   await api.sse('/chat', {
     ...(p.builtin ? { characterId: p.id } : { persona: { name: p.name, description: p.custom!.description, accent: cleanAccent(p.accent), language: langName(p.lang) } }),
     ...(a.memory === false ? {} : { memoryId: p.id }),   // cross-conversation memory (built-in id or this custom persona's id)
@@ -248,6 +252,7 @@ export async function streamChat(a: {
     accent: cleanAccent(p.accent),
     ...(a.resumeHint ? { resumeHint: a.resumeHint } : {}),
     ...(a.webSearch === false ? { tools: { web: false } } : {}),
+    ...(a.callable?.length && !a.opener ? { callable: a.callable, callsMade: a.callsMade || 0 } : {}),
   }, {
     signal: a.signal,
     onEvent: (j) => {
@@ -255,14 +260,15 @@ export async function streamChat(a: {
       if (j.noMemory === true) { noMemory = true; return; }
       if (j.error) { err = typeof j.error === 'string' ? j.error : j.error.message || 'Error'; return; }
       if (j.end) { verdict = j.end; return; }
+      if (j.call && typeof j.call.target === 'string') { call = { target: j.call.target, name: String(j.call.name || ''), reason: String(j.call.reason || '') }; a.onCall?.(call); return; }
       if (j.tool) { const t = parseTool(j.tool); if (t) a.onTool?.(t); return; }
       if (typeof j.t === 'string' && j.t) { reply += j.t; a.onText(j.t, reply); }
     },
   });
   if (noMemory) return { reply: '', verdict: null, noMemory };
   if (err && !reply) throw new Error(err);
-  if (!reply && !verdict) throw new Error('Balasan kosong dari model. Coba kirim lagi.');
-  return { reply, verdict };
+  if (!reply && !verdict && !call) throw new Error('Balasan kosong dari model. Coba kirim lagi.');
+  return { reply, verdict, call };
 }
 
 /** Text shown on screen: audio tags removed, whitespace tidied. */

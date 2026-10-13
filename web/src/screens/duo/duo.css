@@ -1,0 +1,89 @@
+/* ================= Group call: one room, orbs side by side ================= */
+.duo { position: relative; flex: 1; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--bg); width: 100%; max-width: 920px; margin: 0 auto; touch-action: pan-y pinch-zoom; }
+.duo-top { display: flex; align-items: center; gap: 4px; padding: calc(var(--safe-t) + 8px) 8px 0 16px; flex-shrink: 0; min-height: calc(var(--tb-h) + var(--safe-t)); }
+.duo-top .spacer { flex: 1; }
+.duo-head { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.duo-title { font-size: 16px; font-weight: 650; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duo-timer { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* captions: coloured per speaker, the speaker's name above each line */
+.duo-stage { flex: 1; min-height: 72px; position: relative; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 20px 2px; overflow: hidden; }
+.duo-stage .caps { height: 100%; gap: 12px; }
+.duo .cap-b { font-size: 21px; }
+.duo .cap-b.spk { color: color-mix(in oklab, var(--spk, var(--accent)) 42%, var(--fg)); }
+.duo .cap-b.spk::before { content: attr(data-who); display: block; margin-bottom: 2px; font-size: 11.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in oklab, var(--spk, var(--accent)) 75%, var(--muted)); }
+.duo .cap-b.pre { font-style: italic; }
+.duo .cap-b.event { font-size: 14px; color: var(--muted); font-weight: 500; }
+.duo .cap-b.old { opacity: .38; }
+.duo-status { min-height: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; font-size: 13px; color: var(--muted); text-align: center; }
+.duo-status .btn { min-height: 36px; }
+.duo-start { margin: 0 auto; }
+
+/* the orbs: the speaker grows and nudges its neighbours (--dx); ringing = small, shaking, waiting at the side */
+.duo-orbs { --k: .86; flex-shrink: 0; display: flex; justify-content: center; align-items: flex-end; gap: 6px; padding: 4px 12px 0; min-height: calc(var(--big, 156px) * var(--k) + 46px); transition: min-height .4s var(--ease); }
+.duo-slot { --spk: var(--accent); flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; transform: translateX(var(--dx, 0px)); transition: transform .45s var(--ease), opacity .5s ease; }
+.duo-orbbtn { position: relative; width: calc(var(--big, 156px) * var(--k)); height: calc(var(--big, 156px) * var(--k)); border: 0; padding: 0; background: transparent; border-radius: 50%; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: width .4s var(--ease), height .4s var(--ease); }
+.duo-orbbtn:focus-visible { box-shadow: var(--focus); }
+.duo-orb { position: absolute; left: 50%; top: 50%; translate: -50% -50%; transform: scale(calc(var(--k) * .8)); transition: transform .45s var(--ease), opacity .5s ease, filter .5s ease; }
+.duo-slot.talk .duo-orb { transform: scale(var(--k)); }
+.duo-slot.think .duo-orb { transform: scale(calc(var(--k) * .76)); }
+.duo[data-state="ducked"] .duo-slot.talk .duo-orb { transform: scale(calc(var(--k) * .76)); filter: saturate(.75); }
+.duo-slot[data-state="ringing"] .duo-orb { transform: scale(calc(var(--k) * .58)); opacity: .8; animation: duoBuzz 1.2s ease-in-out infinite; }
+.duo-slot[data-state="declined"] .duo-orb { transform: scale(calc(var(--k) * .5)); opacity: .3; filter: grayscale(.8); }
+.duo-slot.joined .duo-orb { animation: duoJoin .6s var(--ease) both; }
+.duo-slot.leaving .duo-orb { opacity: 0; transform: scale(calc(var(--k) * .45)) translateY(24px); filter: saturate(.2); transition-duration: .8s; }
+.duo-slot.leaving { transform: translateX(calc(var(--dx, 0px) + var(--away, 0px))); }
+.duo-slot:first-child.leaving { --away: -28px; } .duo-slot:last-child.leaving { --away: 28px; }
+.duo-slot.gone { opacity: 0; }
+.duo-ringfx { position: absolute; inset: 18%; border-radius: 50%; border: 2px solid color-mix(in oklab, var(--spk) 60%, transparent); opacity: 0; pointer-events: none; }
+.duo-slot[data-state="ringing"] .duo-ringfx { animation: duoRing 1.2s ease-out infinite; }
+@keyframes duoRing { 0% { opacity: .8; transform: scale(.7); } 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes duoBuzz { 0%, 50%, 100% { translate: -50% -50%; } 8%, 24%, 40% { translate: calc(-50% - 2px) -50%; } 16%, 32% { translate: calc(-50% + 2px) -50%; } }
+@keyframes duoJoin { from { transform: scale(calc(var(--k) * .58)); } 60% { transform: scale(calc(var(--k) * .95)); } to { transform: scale(calc(var(--k) * .8)); } }
+.duo-name { font-size: 14px; font-weight: 640; color: color-mix(in oklab, var(--spk) 50%, var(--fg)); max-width: calc(var(--big, 156px) * var(--k) + 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duo-sub { font-size: 12px; color: var(--muted); min-height: 16px; }
+
+/* you: small avatar with a mic-level ring + your words */
+.duo-you { flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 16px 0; min-height: 40px; }
+.duo-youdot { --l: 0; flex-shrink: 0; border-radius: 50%; box-shadow: 0 0 0 calc(2px + var(--l) * 5px) color-mix(in oklab, var(--accent) calc(20% + var(--l) * 60%), transparent); transition: box-shadow .1s linear; }
+.duo-youdot .avatar { width: 28px; height: 28px; font-size: 11px; }
+.duo-youtxt { margin: 0; max-width: min(78%, 520px); text-align: left; }
+.duo-youtxt:not(.on) { width: 0; }
+
+.duo-bottom { flex-shrink: 0; padding: 6px 12px calc(10px + var(--safe-b)); }
+.duo-ctl { max-width: 560px; margin: 8px auto 0; display: flex; gap: 8px; }
+.duo-ctl[hidden] { display: none; }
+.duo-cb { flex: 1 1 0; min-width: 0; min-height: 52px; padding: 6px 4px; border-radius: 16px; border: 1px solid var(--border); background: var(--surface); color: var(--fg-2); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 12px; font-weight: 560; line-height: 1.2; text-align: center; }
+.duo-cb:hover:not(:disabled) { background: var(--surface-2); color: var(--fg); }
+.duo-cb:disabled { opacity: .45; }
+.duo-cb-ic { display: contents; } .duo-cb .ic { width: 20px; height: 20px; }
+.duo-cb.on { background: var(--accent-soft); color: var(--accent-soft-fg); border-color: transparent; }
+.duo-cb.leave { flex-grow: 1.4; background: var(--bad); color: #fff; border-color: transparent; }
+.duo-cb.leave:hover { background: color-mix(in oklab, var(--bad) 88%, #000); color: #fff; }
+.duo-end { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 0 4px; }
+.duo-end[hidden] { display: none; }
+.duo-endt { margin: 0; color: var(--muted); font-size: 14px; text-align: center; }
+.duo-tr .tr-m.ai .tr-who { color: color-mix(in oklab, var(--spk, var(--accent)) 70%, var(--muted)); }
+.duo-tr .tr-m.ev p { font-size: 13px; color: var(--muted); font-style: italic; }
+.duo-pick .ps-main { padding-right: 12px; }
+.duo-pick .ps-main:disabled { opacity: .5; }
+
+/* phone keyboard open: keep the input and the orbs, drop the rest */
+.app.kb-open .duo-ctl, .app.kb-open .duo-you { display: none; }
+.app.kb-open .duo-orbs { --k: .52; }
+.app.kb-open .duo-bottom { padding-bottom: 8px; }
+@media (max-height: 640px) { .duo-orbs { --k: .7; } .duo .cap-b { font-size: 18px; } }
+
+@media (min-width: 900px) {
+  .duo-top { padding: 22px 16px 0 24px; }
+  .duo-title { font-size: 19px; }
+  .duo-stage { padding: 16px 56px 6px; }
+  .duo .cap-b { font-size: 25px; }
+  .duo-orbs { gap: 28px; }
+  .duo-bottom { padding: 6px 24px 22px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .duo-slot, .duo-orb, .duo-orbbtn, .duo-orbs { transition: none !important; }
+  .duo-slot[data-state="ringing"] .duo-orb, .duo-slot[data-state="ringing"] .duo-ringfx, .duo-slot.joined .duo-orb { animation: none !important; }
+  .duo-slot[data-state="ringing"] .duo-ringfx { opacity: .6; }
+}

@@ -34,5 +34,19 @@ Not a phone UI: one shared room, two orbs side by side. Builds on the cross-conv
 - Caption colours per speaker, `aria-live` transcript. Mobile first (390px: orbs stacked closer but still side by side, controls in thumb reach), desktop centred.
 - Reduced motion and no-WebGL fallbacks like the rest of the app. Transitions: orbs fly in from the persona sheet; leaving flies the orbs back.
 
+## Generalised (user decision, 2026-10-13): any personas, ringing, personas calling
+- Participants are not hard-coded: built-ins or the user's own custom personas, max `DUO_MAX_PERSONAS` (3) besides the user. Strix <-> Lena keep
+  their feud (backstory); every other pair only gets each other's short bio and starts as strangers ("you met before" after a remembered call).
+- The user calls someone: from Chat ("Telepon…" in ⋮, "Telepon" in a persona's actions, "Panggilan berdua" in the persona sheet) and from the call
+  ("Tambah orang"). From a solo chat with A, calling B turns it into A + B + user (A stays on the line, its recent solo lines are context).
+- Ringing in the same room (not a phone UI): the callee's orb waits small at the side, pulsing / shaking, "memanggil…", a soft synthesized ring tone
+  (WebAudio, muted with "Bisukan"), a "Batal" button. The callee reacts out loud BEFORE picking up (`POST /api/duo/ring`: one line in its voice and
+  colour), then answers (its orb grows in and it greets in its mood), declines, or lets it ring. Weighted by relationship, remembered mood, who calls,
+  retries and chance. Declined / unanswered calls are remembered by the callee; "Coba lagi" up to 3 times, then its phone is off for this call.
+- Personas can ring someone themselves with the tool `call_persona` (chat and duo), rarely and in character, once per conversation; the call starts
+  with that persona as the caller and the user stays on the line.
+- Memory as above, plus missed calls and links (custom personas share news only with personas they have been on a call with).
+  Contract: server/CONTRACT-NOTES.md "Duo / group calls".
+
 ## Verification
 Real services; scripted multi-turn scenarios: (1) neutral user, they bicker and the user stays out for a beat, (2) user sides with one, (3) user provokes both, one hangs up and the other stays, (4) gentle path, (5) interruption mid-sentence and resume, (6) memory and shared events written and used in the next solo chat, (7) turn caps, (8) quota and abort. UI e2e in headless Edge at 390 and 1366 with fake mic audio, frames reviewed by eye.

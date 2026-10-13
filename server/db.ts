@@ -152,6 +152,16 @@ CREATE TABLE IF NOT EXISTS shared_events (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS shared_events_user ON shared_events(user_id, created_at);
+-- personas that have been on a call together (duo / group calls, server/duo.ts): news from one reaches the other.
+-- Strix <-> Lena are always connected (memory.ts CONNECTED); custom personas only through links.
+CREATE TABLE IF NOT EXISTS persona_links (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  persona_id TEXT NOT NULL,
+  other_id TEXT NOT NULL,
+  other_name TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, persona_id, other_id)
+);
 `;
 
 fs.mkdirSync(path.dirname(config.dbFile), { recursive: true });
@@ -169,6 +179,8 @@ addColumnIfMissing('usage', 'stt_sec', 'INTEGER NOT NULL DEFAULT 0'); // speech-
 addColumnIfMissing('usage', 'search_req', 'INTEGER NOT NULL DEFAULT 0'); // chat web_search tool executions
 addColumnIfMissing('usage', 'decide_req', 'INTEGER NOT NULL DEFAULT 0'); // /api/chat/decide calls
 addColumnIfMissing('usage', 'memory_req', 'INTEGER NOT NULL DEFAULT 0'); // /api/memory/commit summaries (LLM calls)
+addColumnIfMissing('usage', 'call_req', 'INTEGER NOT NULL DEFAULT 0'); // duo: persona calls placed (POST /api/duo/ring)
+addColumnIfMissing('shared_events', 'kind', "TEXT NOT NULL DEFAULT 'solo'"); // solo | duo (witnessed on a shared call) | missed (call not answered)
 addColumnIfMissing('tts_history', 'kind', "TEXT NOT NULL DEFAULT 'tts'"); // 'tts' | 'dialogue' (multi-speaker)
 addColumnIfMissing('tts_history', 'meta_json', 'TEXT'); // dialogue: {cast:[{name,voiceId}], lines, pauseMs, durationSec}
 

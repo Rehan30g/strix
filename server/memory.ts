@@ -28,6 +28,27 @@ export function memoryKey(raw: unknown): string | null {
 }
 export const builtin = (id: string) => characters.find((c) => c.id === id) ?? null;
 
+/* ---------------- links: personas who have been on a call together (server/duo.ts) ---------------- */
+/** Remember that these personas met on a call (both directions). Custom personas share news only through links. */
+export function linkPersonas(userId: number, list: Array<{ id: string; name: string }>) {
+  const now = Date.now();
+  for (const a of list) for (const b of list) {
+    if (a.id === b.id) continue;
+    run(`INSERT INTO persona_links (user_id, persona_id, other_id, other_name, updated_at) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(user_id, persona_id, other_id) DO UPDATE SET other_name = excluded.other_name, updated_at = excluded.updated_at`,
+    userId, a.id, b.id, clean(b.name, 40), now);
+  }
+}
+/** Everyone `pid` knows in this app: the fixed built-in connection (Strix <-> Lena) + everyone met on a call. */
+export function connectedTo(userId: number, pid: string): string[] {
+  const linked = all<{ other_id: string }>('SELECT other_id FROM persona_links WHERE user_id = ? AND persona_id = ?', userId, pid).map((r) => r.other_id);
+  return [...new Set([...(CONNECTED[pid] ?? []), ...linked])].filter((x) => x !== pid);
+}
+/** Display name of a persona id for prompts: built-in nick, else the name stored with a link. */
+export function personaLabel(userId: number, pid: string): string {
+  return builtin(pid)?.nick ?? one<{ other_name: string }>('SELECT other_name FROM persona_links WHERE user_id = ? AND other_id = ? ORDER BY updated_at DESC LIMIT 1', userId, pid)?.other_name ?? 'someone';
+}
+
 /* ---------------- moods (decay with a half-life) ---------------- */
 export const MOODS = ['calm', 'warm', 'happy', 'touched', 'amused', 'hurt', 'sad', 'annoyed', 'angry', 'furious', 'cold', 'sulky', 'wary', 'worried', 'embarrassed'] as const;
 type MoodLabel = typeof MOODS[number];
@@ -130,7 +151,7 @@ interface MemRow {
   user_id: number; persona_id: string; summary: string; facts_json: string; mood_json: string | null;
   last_end_at: number | null; last_end_reason: string | null; last_end_note: string | null; lang: string | null; turns: number; updated_at: number;
 }
-interface EventRow { id: number; source_persona_id: string; persona_ids_json: string; summary: string; created_at: number }
+interface EventRow { id: number; source_persona_id: string; persona_ids_json: string; summary: string; created_at: number; kind?: string }
 const getRow = (userId: number, pid: string) => one<MemRow>('SELECT * FROM persona_memory WHERE user_id = ? AND persona_id = ?', userId, pid);
 const parseArr = (s: string | null | undefined): string[] => { try { const v = JSON.parse(s ?? '[]'); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } };
 function parseMood(s: string | null | undefined): Mood | null {
@@ -144,9 +165,24 @@ function parseMood(s: string | null | undefined): Mood | null {
 
 /** Events about OTHER connected personas that `pid` has heard (newest first). */
 function heardEvents(userId: number, pid: string, limit = 6): EventRow[] {
-  return all<EventRow>(`SELECT id, source_persona_id, persona_ids_json, summary, created_at FROM shared_events
+  return all<EventRow>(`SELECT id, source_persona_id, persona_ids_json, summary, created_at, kind FROM shared_events
     WHERE user_id = ? AND source_persona_id != ? AND EXISTS (SELECT 1 FROM json_each(persona_ids_json) WHERE value = ?)
     ORDER BY created_at DESC, id DESC LIMIT ?`, userId, pid, pid, limit);
+}
+/** Calls `pid` did not take (declined / let ring) in the last 7 days, newest first. */
+function missedCalls(userId: number, pid: string, limit = 3): EventRow[] {
+  return all<EventRow>(`SELECT id, source_persona_id, persona_ids_json, summary, created_at, kind FROM shared_events
+    WHERE user_id = ? AND source_persona_id = ? AND kind = 'missed' AND created_at > ? ORDER BY created_at DESC, id DESC LIMIT ?`,
+  userId, pid, Date.now() - 7 * 86_400_000, limit);
+}
+/** A call to `callee` was declined / not answered: remembered by the callee (and heard by a persona caller). */
+export function noteMissed(userId: number, callee: { id: string; name: string }, caller: { id: string; name: string } | null, decision: 'decline' | 'ignore', why: string, others: string[] = []) {
+  const name = clean(callee.name, 40) || 'someone';
+  const text = cleanSummary(`${caller ? clean(caller.name, 40) : 'The user'} called ${name}${others.length ? ` (with ${others.map((o) => clean(o, 40)).join(' and ')} on the line)` : ''} and ${name} ${decision === 'decline' ? 'declined the call' : 'let it ring without answering'}${why ? ` (${why.replace(/\.$/, '')})` : ''}.`, 240);
+  run('INSERT INTO shared_events (user_id, source_persona_id, persona_ids_json, summary, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)',
+    userId, callee.id, JSON.stringify(caller ? [caller.id] : []), text, Date.now(), 'missed');
+  compactEvents(userId);
+  return text;
 }
 
 const MAX_EVENTS = 30;
@@ -182,11 +218,35 @@ export function noteHangup(userId: number, pid: string, reason: string) {
   userId, pid, JSON.stringify(mood), now, note || null, now);
 }
 
+/** How `pid` feels about the user right now (decayed mood) and whether it hung up on them recently (duo ring decisions). */
+export function relationNow(userId: number, pid: string, now = Date.now()) {
+  const row = getRow(userId, pid);
+  const m = moodNow(parseMood(row?.mood_json), now);
+  const since = row?.last_end_at ? now - row.last_end_at : null;
+  return {
+    known: !!row,
+    mood: m ? { label: m.nowLabel, intensity: m.intensityNow } : null,
+    hungUpRecently: row?.last_end_reason === 'hangup' && since != null && since < 3 * 3_600_000,
+    minutesSince: since == null ? null : Math.round(since / 60_000),
+    missedRecently: missedCalls(userId, pid, 5).filter((e) => now - e.created_at < 3_600_000).length,
+  };
+}
+
 export function forgetPersona(userId: number, pid: string) {
-  return tx(() => ({
-    memory: Number(run('DELETE FROM persona_memory WHERE user_id = ? AND persona_id = ?', userId, pid).changes),
-    events: Number(run('DELETE FROM shared_events WHERE user_id = ? AND source_persona_id = ?', userId, pid).changes),
-  }));
+  return tx(() => {
+    const out = {
+      memory: Number(run('DELETE FROM persona_memory WHERE user_id = ? AND persona_id = ?', userId, pid).changes),
+      events: Number(run('DELETE FROM shared_events WHERE user_id = ? AND source_persona_id = ?', userId, pid).changes),
+    };
+    // it also forgets what it heard / was there for: drop it from other events' audience (an event nobody hears is deleted)
+    for (const e of all<EventRow>('SELECT id, persona_ids_json FROM shared_events WHERE user_id = ? AND EXISTS (SELECT 1 FROM json_each(persona_ids_json) WHERE value = ?)', userId, pid)) {
+      const ids = parseArr(e.persona_ids_json).filter((x) => x !== pid);
+      if (ids.length) run('UPDATE shared_events SET persona_ids_json = ? WHERE id = ?', JSON.stringify(ids), e.id);
+      else { run('DELETE FROM shared_events WHERE id = ?', e.id); out.events++; }
+    }
+    run('DELETE FROM persona_links WHERE user_id = ? AND (persona_id = ? OR other_id = ?)', userId, pid, pid);
+    return out;
+  });
 }
 export function forgetShared(userId: number) {
   return { events: Number(run('DELETE FROM shared_events WHERE user_id = ?', userId).changes) };
@@ -195,6 +255,7 @@ export function forgetAllMemory(userId: number) {
   return tx(() => ({
     memory: Number(run('DELETE FROM persona_memory WHERE user_id = ?', userId).changes),
     events: Number(run('DELETE FROM shared_events WHERE user_id = ?', userId).changes),
+    links: Number(run('DELETE FROM persona_links WHERE user_id = ?', userId).changes),
   }));
 }
 
@@ -211,20 +272,20 @@ function ago(ms: number): string {
   return w < 9 ? `${w} weeks ago` : `${Math.round(d / 30)} months ago`;
 }
 const strength = (x: number) => (x >= 0.7 ? 'strongly, still raw' : x >= 0.45 ? 'clearly, still sore' : x >= 0.2 ? 'a little: more guarded than angry by now, it is fading' : 'barely any more, it has mostly faded: you can be civil, maybe a bit cautious');
-const nameOf = (pid: string) => builtin(pid)?.nick ?? 'someone';
 
 export interface MemoryContext { block: string; has: boolean; lang: string | null; lastEndAt: number | null; hungUp: boolean; minutesSince: number | null }
 
 /** The 'WHAT YOU REMEMBER' system block (~<= 600 tokens) or an empty block when there is nothing to remember. */
 export function memoryContext(userId: number, pid: string, personaName: string, now = Date.now()): MemoryContext {
   const row = getRow(userId, pid);
-  const heard = builtin(pid) ? heardEvents(userId, pid) : [];
+  const heard = heardEvents(userId, pid);
+  const missed = missedCalls(userId, pid);
   // nothing remembered: one short line so the persona does not invent a shared past
   const empty = {
     block: `\n\nMEMORY: you have no memories of any earlier conversation with this user. If they talk as if you spoke before, you simply do not remember it: say so honestly, in character, and never make up what was said.`,
     has: false, lang: null, lastEndAt: null, hungUp: false, minutesSince: null,
   };
-  if (!row && !heard.length) return empty;
+  if (!row && !heard.length && !missed.length) return empty;
   const lines: string[] = [];
   if (!row) lines.push('You have never talked with this user yourself (as far as you remember); you only know about them from the news below.');
   const since = row?.last_end_at ? now - row.last_end_at : null;
@@ -248,10 +309,20 @@ export function memoryContext(userId: number, pid: string, personaName: string, 
     const kept = facts.filter((f) => (used += f.length + 4) <= 900);
     lines.push(`Things you know about them (they told you): ${kept.map((f) => `- ${f}`).join(' ')}`);
   }
-  if (heard.length) {
+  if (missed.length) {
+    lines.push(`Calls you did not take: ${missed.map((e) => `- ${ago(now - e.created_at)}: ${e.summary}`).join(' ')} (if they bring it up, own it in character: you may explain, be prickly, or feel a bit bad about it.)`);
+  }
+  const was = heard.filter((e) => e.kind === 'duo');
+  const news = heard.filter((e) => e.kind !== 'duo');
+  if (was.length) {
     let used = 0;
-    const kept = heard.filter((e) => (used += e.summary.length + 30) <= 700);
-    lines.push(`News you heard second-hand (word gets around; you were NOT there, you only heard about it; "the user" is the person you are talking to right now): ${kept.map((e) => `- you heard (${ago(now - e.created_at)}, about the user and ${nameOf(e.source_persona_id)}) that ${e.summary.replace(/^Earlier:\s*/, 'earlier ')}`).join(' ')}`);
+    const kept = was.filter((e) => (used += e.summary.length + 30) <= 500);
+    lines.push(`From group calls you were on yourself (as ${kept.map((e) => personaLabel(userId, e.source_persona_id)).filter((v, i, a) => a.indexOf(v) === i).join(' / ')} remembers them; you were there): ${kept.map((e) => `- ${ago(now - e.created_at)}: ${e.summary.replace(/^Earlier:\s*/, 'earlier ')}`).join(' ')}`);
+  }
+  if (news.length) {
+    let used = 0;
+    const kept = news.filter((e) => (used += e.summary.length + 30) <= 700);
+    lines.push(`News you heard second-hand (word gets around; you were NOT there, you only heard about it; "the user" is the person you are talking to right now): ${kept.map((e) => `- you heard (${ago(now - e.created_at)}, about the user and ${personaLabel(userId, e.source_persona_id)}) that ${e.summary.replace(/^Earlier:\s*/, 'earlier ')}`).join(' ')}`);
   }
   const data = lines.join('\n').replace(/={3,}/g, '');
   const hungUp = row?.last_end_reason === 'hangup';
@@ -265,7 +336,7 @@ How to use it, as ${personaName}:
 - Remember the way a person does: naturally, in passing, only when it fits. Never announce or explain your memory, never mention notes, summaries, an app or a memory system, never recite this list.
 - Your mood carries over from last time and fades with time as described above. If you hung up on them recently and they are back, you are NOT cheerful: be cold, clipped or wary to match how much is left, and thaw only gradually, and only if they are genuinely sorry or kind (a cheap "lol sorry" is not enough). If they push you again you can hang up again. What happens in THIS conversation counts more than the old mood.
 - If the last call was days or weeks ago, you can notice it naturally ("it's been a while").
-- Second-hand news: you only heard about it, so paraphrase it in your own words, never quote it, do not claim you were there, and do not pretend to know more than is written. React in character (e.g. about the user and ${CONNECTED[pid]?.map(nameOf).join(' or ') || 'others'}).
+- Second-hand news: you only heard about it, so paraphrase it in your own words, never quote it, do not claim you were there, and do not pretend to know more than is written. React in character (e.g. about the user and ${connectedTo(userId, pid).map((x) => personaLabel(userId, x)).join(' or ') || 'others'}).
 - Never invent memories beyond these; if they mention something you do not remember, say so honestly or ask. It is fine to be fuzzy about small details.`;
   return { block, has: true, lang: row?.lang ?? null, lastEndAt: row?.last_end_at ?? null, hungUp, minutesSince: since == null ? null : Math.round(since / 60_000) };
 }
@@ -282,6 +353,10 @@ facts: at most 20 short items (each under 120 characters) about the USER and you
 events: 0-3 notable things that happened in THIS conversation (a fight, ${name} hanging up, an apology, making up, a secret coming out, the user saying they will go and talk to someone). Short neutral news in third person, under 200 characters each, no quotes; always call the user "the user" (you may add their name once in brackets-free form like "the user, Bob,"), and name ${name}. visibleToOthers=true ONLY for things that would naturally get around as news to ${others.length ? others.join(' and ') : 'other people'} (a big fight, a hang-up, a reconciliation, the user saying they are going to see or side with ${others[0] ?? 'someone else'}, something the user explicitly asked to pass on). Private things the user confided (health, family trouble, secrets, personal details) are always visibleToOthers=false.${others.length ? '' : ' (This character knows nobody else in the app: use false.)'}
 mood: how ${name} feels about the user at the END of this conversation. label is one of ${MOODS.join('|')}; intensity 0..1; reason under 120 characters. If ${name} hung up in anger, intensity is high (0.7-1) unless they clearly made up before the end.
 language: the language the user mostly spoke, as an English name (e.g. "English", "Indonesian").`;
+/** Extra rules when the conversation was a group call (server/duo.ts). */
+const DUO_MEMORY_NOTE = (name: string, others: string[]) => `
+
+THIS CONVERSATION WAS A GROUP VOICE CALL between the user, ${name} and ${others.join(' and ')} (their lines are labelled with their names; some may have joined or left during the call). Write the memory from ${name}'s side: what the user said and did, how the user treated ${name} and the others (took sides, calmed things down, stirred), and what happened between ${name} and the others on the call (fights, someone leaving, apologies, making up). Facts are still only about the USER. events: 0-2 things ${name} did or that happened to ${name} on this call (e.g. "${name} and ${others[0]} made up on a call with the user", "${name} left the call after ..."); visibleToOthers=true for anything notable that happened on the call, because the others were there too.`;
 
 const TAG_RE = /\[[^\]]{0,60}\]/g;
 const msgSchema = z.object({ role: z.string().max(20), content: z.string().max(8000) }).passthrough();
@@ -291,6 +366,10 @@ const commitBody = z.object({
   messages: z.array(msgSchema).max(400),
   reason: z.enum(['hangup', 'restart', 'switch', 'idle', 'duo']),
   hangup: z.object({ reason: z.string().max(600).optional().nullable() }).optional().nullable(),
+  // group call (server/duo.ts): who else was on it; assistant messages then carry `speaker` (persona id)
+  duo: z.object({
+    with: z.array(z.object({ id: z.string().max(64), name: z.string().max(200) })).max(4),
+  }).optional().nullable(),
 });
 const outSchema = z.object({
   summary: z.string().max(8000).optional().nullable(),
@@ -302,7 +381,7 @@ const outSchema = z.object({
 
 export const MEMORY_TIMEOUT_MS = 8000;
 
-async function summarise(input: unknown, name: string, others: string[], userId: number, signal: AbortSignal, model: string, pid: string) {
+async function summarise(input: unknown, name: string, others: string[], userId: number, signal: AbortSignal, model: string, pid: string, duoWith: string[] | null = null) {
   const r = await openrouter({
     model,
     temperature: 0.3,
@@ -311,7 +390,7 @@ async function summarise(input: unknown, name: string, others: string[], userId:
     response_format: { type: 'json_object' },
     provider: { sort: 'latency', allow_fallbacks: true },
     usage: { include: true },
-    messages: [{ role: 'system', content: MEMORY_SYSTEM(name, others, pid) },{ role: 'user', content: JSON.stringify(input) }],
+    messages: [{ role: 'system', content: MEMORY_SYSTEM(name, others, pid) + (duoWith?.length ? DUO_MEMORY_NOTE(name, duoWith) : '') }, { role: 'user', content: JSON.stringify(input) }],
   }, signal, 'Strix memory');
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j: any = await r.json();
@@ -325,8 +404,9 @@ async function summarise(input: unknown, name: string, others: string[], userId:
 /** Public view (GET /api/memory/:id and commit result). */
 export function publicMemory(userId: number, pid: string, now = Date.now()) {
   const row = getRow(userId, pid);
-  const heard = builtin(pid) ? heardEvents(userId, pid, 30) : [];
-  const told = builtin(pid) ? all<EventRow>('SELECT * FROM shared_events WHERE user_id = ? AND source_persona_id = ? ORDER BY created_at DESC LIMIT 30', userId, pid) : [];
+  const heard = heardEvents(userId, pid, 30);
+  const told = all<EventRow>("SELECT * FROM shared_events WHERE user_id = ? AND source_persona_id = ? AND kind != 'missed' ORDER BY created_at DESC LIMIT 30", userId, pid);
+  const missed = missedCalls(userId, pid, 10);
   const m = moodNow(parseMood(row?.mood_json), now);
   return {
     personaId: pid,
@@ -336,8 +416,9 @@ export function publicMemory(userId: number, pid: string, now = Date.now()) {
     mood: m ? { label: m.label, intensity: m.intensity, intensityNow: m.intensityNow, nowLabel: m.nowLabel, reason: m.reason, at: iso(m.at) } : null,
     lastEndAt: iso(row?.last_end_at), lastEndReason: row?.last_end_reason ?? null, lastEndNote: row?.last_end_note ?? null,
     lang: row?.lang ?? null, turns: row?.turns ?? 0, updatedAt: iso(row?.updated_at),
-    heard: heard.map((e) => ({ id: e.id, from: e.source_persona_id, text: e.summary, at: iso(e.created_at) })),
-    told: told.map((e) => ({ id: e.id, to: parseArr(e.persona_ids_json), text: e.summary, at: iso(e.created_at) })),
+    heard: heard.map((e) => ({ id: e.id, from: e.source_persona_id, fromName: personaLabel(userId, e.source_persona_id), kind: e.kind ?? 'solo', text: e.summary, at: iso(e.created_at) })),
+    told: told.map((e) => ({ id: e.id, to: parseArr(e.persona_ids_json), toNames: parseArr(e.persona_ids_json).map((x) => personaLabel(userId, x)), kind: e.kind ?? 'solo', text: e.summary, at: iso(e.created_at) })),
+    missed: missed.map((e) => ({ id: e.id, text: e.summary, at: iso(e.created_at) })),
   };
 }
 
@@ -384,34 +465,43 @@ export async function memoryRoutes(app: FastifyInstance) {
     const t0 = Date.now();
     const char = builtin(pid);
     const name = char?.nick ?? (clean(b.personaName, 40) || 'the character');
-    const others = (CONNECTED[pid] ?? []).map(nameOf);
+    // group call: the others on it (ids sanitised) are linked, so news can travel between them from now on
+    const duoWith = (b.duo?.with ?? []).map((w) => ({ id: memoryKey(w.id), name: builtin(memoryKey(w.id) ?? '')?.nick ?? clean(w.name, 40) }))
+      .filter((w): w is { id: string; name: string } => !!w.id && w.id !== pid && !!w.name);
+    const isDuo = b.reason === 'duo' || !!b.duo;
+    if (duoWith.length) linkPersonas(user.id, [{ id: pid, name }, ...duoWith]);
+    const connected = connectedTo(user.id, pid);
+    const others = connected.map((x) => personaLabel(user.id, x));
+    const speakerName = (id: unknown) => { const k = memoryKey(id); return !k || k === pid ? name : duoWith.find((w) => w.id === k)?.name ?? builtin(k)?.nick ?? 'someone else'; };
     // transcript = DATA: user/assistant only, audio tags and control characters removed, each line capped, last 40
     const transcript = b.messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ speaker: m.role === 'user' ? 'user' : name, text: clean(m.content.replace(TAG_RE, ' '), 1200) }))
+      .map((m) => ({ speaker: m.role === 'user' ? 'user' : speakerName((m as { speaker?: unknown }).speaker), text: clean(m.content.replace(TAG_RE, ' '), 1200) }))
       .filter((m) => m.text)
       .slice(-40);
     const userTurns = transcript.filter((m) => m.speaker === 'user').length;
+    const minUser = isDuo ? 1 : 2;   // on a group call the personas also talk to each other: one user turn can be enough
     const now = Date.now();
     const row = getRow(user.id, pid);
     const hangNote = b.reason === 'hangup' ? cleanSummary(b.hangup?.reason ?? row?.last_end_note ?? '', 300) : '';
     // how the conversation ended is always recorded when there is something to remember (no LLM needed)
     const touchEnd = () => {
-      if (!row && userTurns < 2 && b.reason !== 'hangup') return false;
+      if (!row && userTurns < minUser && b.reason !== 'hangup') return false;
       run(`INSERT INTO persona_memory (user_id, persona_id, last_end_at, last_end_reason, last_end_note, updated_at) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, persona_id) DO UPDATE SET last_end_at = excluded.last_end_at, last_end_reason = excluded.last_end_reason,
         last_end_note = CASE WHEN excluded.last_end_reason = 'hangup' THEN COALESCE(excluded.last_end_note, last_end_note) ELSE NULL END,
         updated_at = excluded.updated_at`, user.id, pid, now, b.reason, hangNote || null, now);
       return true;
     };
-    if (userTurns < 2) { touchEnd(); return { ok: true, skipped: 'too_short', ms: Date.now() - t0 }; }
+    if (userTurns < minUser || (isDuo && transcript.length < 3)) { touchEnd(); return { ok: true, skipped: 'too_short', ms: Date.now() - t0 }; }
     if (!config.openrouterKey) { touchEnd(); return { ok: true, skipped: 'llm_not_configured', ms: Date.now() - t0 }; }
     const refund = chargeMemory(user); // QuotaError -> 429 {error:'quota', kind:'memory'}
 
     const prevMood = moodNow(parseMood(row?.mood_json), now);
     const input = {
       character: name,
-      endedBy: b.reason === 'hangup' ? `${name} hung up on the user${hangNote ? `: ${hangNote}` : ''}` : b.reason === 'idle' ? 'the conversation went quiet' : 'the user ended or left the conversation',
+      ...(duoWith.length ? { call: `group voice call: the user, ${name}, ${duoWith.map((w) => w.name).join(', ')}` } : {}),
+      endedBy: b.reason === 'hangup' ? `${name} ${isDuo ? 'left the group call' : 'hung up on the user'}${hangNote ? `: ${hangNote}` : ''}` : b.reason === 'idle' ? 'the conversation went quiet' : 'the user ended or left the conversation',
       previous: {
         summary: row?.summary ?? '',
         facts: parseArr(row?.facts_json),
@@ -424,7 +514,7 @@ export async function memoryRoutes(app: FastifyInstance) {
     const models = [...new Set([config.decisionModel, config.defaultModel])];
     let res: Awaited<ReturnType<typeof summarise>> | null = null;
     for (const model of models) {
-      try { res = await summarise(input, name, others, user.id, signal, model, pid); break; } catch (e) {
+      try { res = await summarise(input, name, others, user.id, signal, model, pid, duoWith.length ? duoWith.map((w) => w.name) : null); break; } catch (e) {
         req.log.warn({ model, err: (e as Error).message }, 'memory: summary failed');
       }
       if (signal.aborted || Date.now() - t0 > MEMORY_TIMEOUT_MS - 2500) break;
@@ -453,8 +543,10 @@ export async function memoryRoutes(app: FastifyInstance) {
         lang = excluded.lang, turns = turns + excluded.turns, updated_at = excluded.updated_at`,
       user.id, pid, summary, JSON.stringify(facts), mood ? JSON.stringify(mood) : null, now, b.reason, hangNote || null, lang, userTurns, now);
       for (const e of share) {
-        run('INSERT INTO shared_events (user_id, source_persona_id, persona_ids_json, summary, created_at) VALUES (?, ?, ?, ?, ?)',
-          user.id, pid, JSON.stringify(CONNECTED[pid]), e.text, now);
+        // group call: only those who were on it get it (as something they were there for); solo: everyone connected
+        const to = duoWith.length ? duoWith.map((w) => w.id) : connected;
+        run('INSERT INTO shared_events (user_id, source_persona_id, persona_ids_json, summary, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)',
+          user.id, pid, JSON.stringify(to), e.text, now, duoWith.length ? 'duo' : 'solo');
       }
     });
     if (share.length) compactEvents(user.id);

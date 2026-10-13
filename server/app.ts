@@ -21,6 +21,7 @@ import { autotagRoutes } from './autotag.js';
 import { sttRoutes } from './stt.js';
 import { decideRoutes } from './decide.js';
 import { memoryRoutes } from './memory.js';
+import { duoRoutes } from './duo.js';
 import { QuotaError } from './quota.js';
 
 export async function buildApp() {
@@ -99,6 +100,7 @@ export async function buildApp() {
   await app.register(sttRoutes);
   await app.register(decideRoutes);
   await app.register(memoryRoutes);
+  await app.register(duoRoutes);
 
   // Built SPA (web/dist) + history fallback
   const indexHtml = path.join(config.webDist, 'index.html');
