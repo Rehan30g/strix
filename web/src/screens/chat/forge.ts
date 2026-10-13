@@ -130,14 +130,20 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const inBar = h('div', { class: 'pf-ibar' }, backOut, h('div', { class: 'pf-pn' }, prev, next), inSave);
   const msgBox = h('div', { class: 'pf-msg' }, f.msg);
   const inside = h('div', { class: 'pf-in' }, world, tabRow, inBar, msgBox);
+  // the inside (panels, fields, voice picker...) is not laid out until the first dive: opening the editor stays cheap
+  inside.style.display = 'none';
+  const wakeInside = () => { if (inside.style.display === 'none') { inside.style.display = ''; layout(); } };
   const fly = h('div', { class: 'pf-fly', 'aria-hidden': 'true' }, h('span'));
   const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
   const root = h('div', { class: 'pf mode-out', role: 'dialog', 'aria-modal': 'true', 'aria-label': f.isNew ? 'Buat persona baru' : 'Edit persona' }, gl.canvas, outside, inside, top, fly, live);
   document.body.append(root);
   // no WebGL: the sphere's orb is a real DOM orb under the (transparent) canvas
   const DORB = 400;
-  const dorb = gl.kind === '2d' ? orb(f.spec(), { size: DORB, cls: 'pf-dorb', live: true }) : null;
-  if (dorb) root.insertBefore(dorb, gl.canvas);
+  // a real DOM orb stands in for the sphere while the GL program is still being built (and without WebGL): the editor
+  // is usable at once and looks the same at rest
+  const dorb = orb(f.spec(), { size: DORB, cls: 'pf-dorb', live: !matchMedia('(prefers-reduced-motion: reduce)').matches }) as OrbEl & { _live: { time: number } | null };
+  root.insertBefore(dorb, gl.canvas);
+  let usedGL = false;
   let lastRS = 0, lastCtr: [number, number] = [0, 0], testHold = false, testRS = 0, testView = false;
   const app = document.getElementById('app');
   const appWasInert = !!app?.inert;
@@ -221,6 +227,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const panelYaw = (i: number) => i * STEP;
   function dive(to: 'in' | 'out', panel = active, dur = 1.5, after?: () => void) {
     const goingIn = to === 'in';
+    if (goingIn) wakeInside();
     if (goingIn) engaged = true;
     if (goingIn) active = panel;
     const yaw1 = goingIn ? cam.yaw + wrapA(panelYaw(panel) - cam.yaw) : cam.yaw;
@@ -623,10 +630,12 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
       }
       if (testRS) rS = testRS;
       lastRS = rS; lastCtr = ctr;
-      gl.draw({ cam: c, T, spec, time: orbTime, specB, timeB, morph, k: k3, rS, ctr, glass, scan, flash, squash: [1 + sq * k3, 1 - sq * k3, 1 + sq * k3], ripples, bgA: BG_A, bgB: BG_B, rest: REST });
-      if (dorb) {
+      usedGL = gl.draw({ cam: c, T, spec, time: orbTime, specB, timeB, morph, k: k3, rS, ctr, glass, scan, flash, squash: [1 + sq * k3, 1 - sq * k3, 1 + sq * k3], ripples, bgA: BG_A, bgB: BG_B, rest: REST });
+      dorb.style.display = usedGL ? 'none' : '';
+      if (!usedGL) {
         // no WebGL: a real DOM orb stands in for the sphere outside
         if (dorb._spec.key !== spec.key) dorb.setSpec(spec);
+        if (dorb._live) dorb._live.time = orbTime;   // same clock as the GL orb: switching over is seamless
         const box = (rS * 2) / 0.88, x = L.W / 2 + ctr[0] - box / 2, y = L.H / 2 + ctr[1] - box / 2;
         dorb.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) scale(${(box / DORB).toFixed(4)})`;
         dorb.style.opacity = clamp((cam.d - 1.6) / 0.8).toFixed(3);
@@ -661,7 +670,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   (window as unknown as { __forge?: unknown }).__forge = () => ({
     mode, active: PANELS[active].k, cam: { d: +cam.d.toFixed(3), yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3), f: +camF().toFixed(1) }, scan: +scan.toFixed(2), drops, glass: +glass.toFixed(3), k: +k3.toFixed(3),
     orbTime, specKey: spec.key, morph, engaged, arriving: !!arrive, rS: lastRS, ctr: lastCtr,
-    renderer: gl.kind, kb: L.kb, frames, busy: f.busy(), filled: f.filled(), aiOrb: f.aiOrb(), orb: f.orb(), ripples: ripples.length, log: log.slice(), msg: f.msg.textContent,
+    renderer: gl.kind, glReady: gl.ready, kb: L.kb, frames, busy: f.busy(), filled: f.filled(), aiOrb: f.aiOrb(), orb: f.orb(), ripples: ripples.length, log: log.slice(), msg: f.msg.textContent,
     sphere: sphere(), chips: tiles.map((c) => { const r = c.getBoundingClientRect(); return { k: c.dataset.k, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }),
     panelRects: panels.map((p) => { const r = p.getBoundingClientRect(); return { k: p.dataset.k, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height), op: p.style.opacity }; }),
     /** screen position of a world point (e.g. the sphere's front point) */

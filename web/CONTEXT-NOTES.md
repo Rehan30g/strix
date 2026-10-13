@@ -28,6 +28,11 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   are positioned with a transform never jump when pressed (that was the `.ps-more` jump).
 - `src/styles/mobile.css` — phones (<= 640 px): touch targets >= 44-48 px, inputs 16 px, popover menus become a bottom
   action sheet (ui/overlay.ts `.menu.sheet` + scrim).
+- `src/ui/glprog.ts` — `buildProgram()`: WebGL programs without main-thread freezes (KHR_parallel_shader_compile +
+  polling; without the extension the blocking status check is deferred to idle). Used by ui/orb.ts (2D orbs: 2D painter
+  until ready, then repaint; the GL context is created in its own task), the persona forge (forgegl.ts: ONE shared
+  context + program per page, prewarmed at idle by the Chat screen via `prewarmForge()`; a real DOM orb stands in until
+  ready; morph = two passes of one program) and the tour stage (ui/intro/stage.ts; draws nothing until ready).
 - `src/ui/gesture.ts` — `drag()` (axis-locked Pointer Events), `swipeRow()` (actions behind a row), `pullToRefresh()`
   (Touch Events), `haptic()`, `rubber()`. Used by: modal bottom sheets (drag handle/header down to close), tab swipe
   in `shell.ts` (phones, not inside `[data-hswipe]`/inputs/range/players), Chat edge-swipe back to the list, persona /

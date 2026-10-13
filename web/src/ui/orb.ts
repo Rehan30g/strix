@@ -7,6 +7,7 @@
    WebGL context limit. Live orbs pause when off screen, when the tab is hidden, and fall back to the still image
    under prefers-reduced-motion. Canvas 2D fallback when WebGL is unavailable. */
 import { h } from './dom';
+import { buildProgram } from './glprog';
 
 export type Rgb = [number, number, number];
 export interface OrbSpec {
@@ -277,28 +278,58 @@ void main(){
 
 interface GL { gl: WebGLRenderingContext; canvas: HTMLCanvasElement; u: Record<string, WebGLUniformLocation | null> }
 let glState: GL | null | undefined;
+/** the program is being built in the background (KHR_parallel_shader_compile, ui/glprog.ts): orbs use the 2D painter
+    meanwhile and are repainted once it is ready (nothing blocks the page while the driver compiles) */
+let glPending = false;
+const restill = new Set<OrbEl>();
 function engine(): GL | null {
   if (glState !== undefined) return glState;
+  if (glPending) return null;
+  // the context + program are set up in a task of their own (never inside the caller's task, e.g. a screen mount)
+  glPending = true;
+  setTimeout(startEngine, 0);
+  return null;
+}
+function startEngine(): void {
   try {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 256;
     const gl = canvas.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false, preserveDrawingBuffer: false }) as WebGLRenderingContext | null;
-    if (!gl) return (glState = null);
-    const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader'); return s; };
-    const prog = gl.createProgram()!;
-    gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) || 'link');
-    gl.useProgram(prog);
-    const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    const loc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-    const u: GL['u'] = {};
-    for (const n of ['uSize', 'uTime', 'uAmp', 'uPat', 'uTwist', 'uK', 'uWarp', 'uN', 'uC0', 'uC1', 'uC2', 'uC3', 'uC4', 'uSeed',
-      'uScale', 'uStir', 'uTurb', 'uOff', 'uFlow', 'uA1', 'uA2', 'uB1', 'uB2']) u[n] = gl.getUniformLocation(prog, n);
-    canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glState = null; });
-    return (glState = { gl, canvas, u });
-  } catch (e) { console.warn('orb: WebGL tidak tersedia', (e as Error).message); return (glState = null); }
+    if (!gl) { glPending = false; glState = null; return; }
+    // the program in the next task (creating the context is a big step of its own)
+    setTimeout(() => buildEngine(gl, canvas), 0);
+  } catch (e) { console.warn('orb: WebGL tidak tersedia', (e as Error).message); glPending = false; glState = null; }
 }
+function buildEngine(gl: WebGLRenderingContext, canvas: HTMLCanvasElement): void {
+  try {
+    const job = buildProgram(gl, VS, FS, 'orb');
+    void job.done.then((ok) => {
+      if (!ok) { glPending = false; glState = null; return; }
+      const prog = job.prog;
+      gl.useProgram(prog);
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      const u: GL['u'] = {};
+      for (const n of ['uSize', 'uTime', 'uAmp', 'uPat', 'uTwist', 'uK', 'uWarp', 'uN', 'uC0', 'uC1', 'uC2', 'uC3', 'uC4', 'uSeed',
+        'uScale', 'uStir', 'uTurb', 'uOff', 'uFlow', 'uA1', 'uA2', 'uB1', 'uB2']) u[n] = gl.getUniformLocation(prog, n);
+      canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glState = null; });
+      // one tiny warm-up draw that nobody reads back: the driver finishes its lazy work in the GPU process while the
+      // page keeps running; only then do the orbs switch over (a read-back right away would wait for it)
+      gl.viewport(0, 0, 1, 1); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.flush();
+      glPending = true;
+      setTimeout(() => {
+        glPending = false;
+        glState = { gl, canvas, u };
+        // the stills painted by the 2D fallback meanwhile get their real image now
+        for (const el of restill) if (el.isConnected) (el as OrbEl & { _restill?: () => void })._restill?.();
+        restill.clear();
+      }, 180);
+    });
+  } catch (e) { console.warn('orb: WebGL tidak tersedia', (e as Error).message); glPending = false; glState = null; }
+}
+/** Start building the orb shader early (idle time), so the first orb never waits. */
+export function prewarmOrbs(): void { engine(); }
 
 const ZERO4 = new Float32Array(4);
 /** Silhouette of a shaped orb as Fourier harmonics of the radius (same slots as the jelly body; added to it).
@@ -392,6 +423,7 @@ function still(spec: OrbSpec, px: number): string {
   const ctx = scratch.getContext('2d')!;
   paint(ctx, spec, px, spec.t0, 0);
   url = scratch.toDataURL('image/png');
+  if (glPending) return url;   // a 2D stand-in: not cached, the element is repainted when the shader is ready
   if (stills.size > 600) stills.clear();
   stills.set(k, url);
   return url;
@@ -588,8 +620,9 @@ export function orb(spec: OrbSpec, opts: { size: number; live?: boolean; level?:
     const k = el._spec.key + '|' + px;
     const cached = stills.get(k);
     const set = (u: string) => { el.style.backgroundImage = `url("${u}")`; el.classList.add('ready'); };
-    if (cached) set(cached); else enqueue(el, () => set(still(el._spec, px)));
+    if (cached) set(cached); else enqueue(el, () => { set(still(el._spec, px)); if (glPending) restill.add(el); });
   };
+  (el as OrbEl & { _restill?: () => void })._restill = applyStill;
   el.setSpec = (s) => {
     if (el._spec && el._spec.key === s.key) return;
     el._spec = s;

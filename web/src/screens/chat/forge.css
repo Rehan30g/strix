@@ -17,6 +17,7 @@
 .pf.closing { opacity: 0; pointer-events: none; }
 .pf .select option { background: #1a1c21; color: var(--fg); }
 .pf-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.pf-gl > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 .pf.mode-in .pf-gl { cursor: ew-resize; }
 .pf :focus-visible { outline: 2px solid var(--pa); outline-offset: 2px; }
 .pf .input:focus-visible, .pf .textarea:focus-visible, .pf .select:focus-visible { outline: none; }

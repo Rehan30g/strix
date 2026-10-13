@@ -9,6 +9,7 @@
    shown as extra defocus instead). Canvas 2D fallback (no WebGL / no instancing): same layout with radial gradients.
    `probe()` (test hook) draws each ball alone and measures its alpha bounding box from a pixel readback. */
 import { ORB_FS, ORB_JELLY_SCALE, orbSoftness, type OrbSpec, type Rgb } from '../orb';
+import { buildProgram } from '../glprog';
 
 export interface Rich {
   id: string; x: number; y: number; r: number;          // css px, r = orb radius
@@ -142,17 +143,26 @@ export class Stage {
     this.canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); this.lost = true; });
   }
 
+  /** the three programs are built in the background (ui/glprog.ts: no main-thread freeze); nothing is drawn until then */
+  ready = false;
   private setup(): void {
     const gl = this.gl!;
-    const sh = (type: number, src: string) => { const s = gl.createShader(type)!; gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) || 'shader'); return s; };
-    const link = (vs: string, fs: string) => { const p = gl.createProgram()!; gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p) || 'link'); return p; };
-    this.rp = link(VS_RICH, richFS());
+    const jobs = [buildProgram(gl, VS_RICH, richFS(), 'tour rich'), buildProgram(gl, VS_DOT, FS_DOT, 'tour dots'), buildProgram(gl, VS_FULL, FS_BG, 'tour bg')];
+    void Promise.all(jobs.map((j) => j.done)).then((oks) => {
+      if (!oks.every(Boolean) || gl.isContextLost()) { this.lost = true; return; }
+      this.link(jobs[0].prog, jobs[1].prog, jobs[2].prog);
+      this.ready = true;
+    });
+  }
+  private link(rp: WebGLProgram, dp: WebGLProgram, bp: WebGLProgram): void {
+    const gl = this.gl!;
+    this.rp = rp;
     for (const n of RICH_U) this.ru[n] = gl.getUniformLocation(this.rp, n);
     this.rloc = gl.getAttribLocation(this.rp, 'a');
-    this.dp = link(VS_DOT, FS_DOT);
+    this.dp = dp;
     for (const n of ['uRes', 'uT']) this.du[n] = gl.getUniformLocation(this.dp, n);
     for (const n of ['a', 'iA', 'iC0', 'iC1', 'iC2', 'iB']) this.dloc[n] = gl.getAttribLocation(this.dp, n);
-    this.bp = link(VS_FULL, FS_BG);
+    this.bp = bp;
     for (const n of ['uRes', 'uTop', 'uBot', 'uGlow', 'uGlow2', 'uG', 'uG2', 'uT', 'uGrain', 'uFade']) this.bu[n] = gl.getUniformLocation(this.bp, n);
     this.bloc = gl.getAttribLocation(this.bp, 'a');
     this.quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
@@ -175,7 +185,7 @@ export class Stage {
   /** bg null = a transparent layer (orbs only, drawn over DOM content) */
   draw(bg: Bg | null, rich: Rich[], dots: Dot[], T: number, front: Dot[] = []): void {
     if (this.ctx2) return this.draw2d(bg, rich, dots.concat(front));
-    const gl = this.gl; if (!gl || this.lost || gl.isContextLost()) return;
+    const gl = this.gl; if (!gl || this.lost || !this.ready || gl.isContextLost()) return;
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     if (bg) this.drawBg(bg, T);
     else { gl.disable(gl.BLEND); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }

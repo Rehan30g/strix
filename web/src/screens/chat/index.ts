@@ -25,6 +25,7 @@ import { startStt, sttSupported, prewarmStt, type SttSession } from '../../lib/s
 import { DuplexMachine, isEcho, splitAtWord, plain, words, fastDecide, type DEvent, type Effect, type DState, type ResumeHint } from '../../lib/duplex';
 import { decide, decideLog } from '../../lib/decide';
 import { openPersonaEditor, createPersonaFlow } from './creator';
+import { prewarmForge } from './forgegl';
 import { toolChip, toolLine, toolMeta, isQuota } from './tools';
 import {
   type Persona, type ChatLog, type ChatMsg, type Verdict, type CustomPersona, type ToolEvent,
@@ -162,6 +163,12 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     return 0;
   };
   theOrb.setLive(true, orbLevel);
+  // build the persona editor's GL program in the background now (idle time), so "Buat persona" opens at once
+  {
+    const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+    const warm = () => prewarmForge();
+    if (ric) ric(warm, { timeout: 3000 }); else setTimeout(warm, 1500);
+  }
   // jelly: drag stretches the orb (a light drag swallows the click, so it never stops / opens anything); tap splashes
   jelly(theOrb, { target: orbBtn });
 
