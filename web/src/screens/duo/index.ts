@@ -33,7 +33,7 @@ const NUDGE_MS = 7000, NUDGE_Q_MS = 12000;      // silence before the personas f
 type SlotState = 'ringing' | 'on' | 'left' | 'declined';
 interface Slot {
   p: Persona; el: HTMLElement; inner: HTMLElement; orb: OrbEl; label: HTMLElement; sub: HTMLElement;
-  state: SlotState; joinIdx: number; leftIdx: number | null; committed: boolean; hangup: string;
+  state: SlotState; joinIdx: number; leftIdx: number | null; committed: boolean; hangup: string; how?: 'storm_out' | 'quiet';
   color: string;
 }
 interface Reply {
@@ -42,7 +42,7 @@ interface Reply {
   pendingCaps: Array<{ sid: string; t: string }>; block: boolean;
   msg: DuoMsg | null; streaming: boolean; cut: boolean; cancelled: boolean;
   end: EndEvent | null; call: CallEvent | null; next: string | null; userAt: number; reqAt: number; heardAt: number;
-  ring?: boolean; after: Array<() => void>; ctrl?: AbortController;
+  ring?: boolean; after: Array<() => void>; ctrl?: AbortController; close?: boolean;
 }
 
 export function mount(root: HTMLElement, ctx: ScreenCtx) {
@@ -261,6 +261,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const c = { sid, start: start + (raw.length - raw.trimStart().length), raw: t, done: false };
     r.chunks.push(c);
     if (r.block) caps.add(sid, t); else r.pendingCaps.push({ sid, t });
+    // a persona answering another persona: a natural beat (0.6-1.5 s) after the line before, not a queue
+    if (r.chunks.length === 1 && !r.userAt && !r.ring && player.pending > 0) void player.gap(600 + Math.random() * 900);
     caps.speed = settings.tune().speed || 1;
     const who = (r.ring ? 'ring:' : 'duo:') + p.id;
     player.speak(ttsText(p, t), {
@@ -373,7 +375,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function insertMsg(r: Reply, m: DuoMsg) { r.msg = m; log.push(m); }
 
   /* ================= turns ================= */
-  type TurnOpts = { speaker?: string; nudge?: 'silence'; join?: { id: string; caller: string }; resumeHint?: ResumeHint; opener?: boolean; userAt?: number };
+  type TurnOpts = { speaker?: string; nudge?: 'silence' | 'goodbye'; join?: { id: string; caller: string }; resumeHint?: ResumeHint; opener?: boolean; userAt?: number };
   async function requestTurn(o: TurnOpts) {
     if (ended || !present().length) return;
     const myGen = gen;
@@ -393,11 +395,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         ...(o.resumeHint ? { resumeHint: o.resumeHint } : {}), ...(o.opener ? { opener: true } : {}),
       }, {
         signal: r.ctrl.signal,
-        onSpeaker: (id) => { r.speaker = id; paintSlots(); },
         onText: (d, full) => { r.full = full; chunks.push(d); },
         onEnd: (e) => { r.end = e; },
         onCall: (c) => { r.call = c; },
-        onNext: (nx, info) => { r.next = nx; lastChain = Number(info?.chain) || 0; },
+        onNext: (nx, info) => { r.next = nx; lastChain = Number(info?.chain) || 0; if (info?.close) r.close = true; },
+        onSpeaker: (id, info) => { r.speaker = id; if (info?.maxChain) maxChain = Number(info.maxChain); if (info?.idleCloseSec) idleCloseMs = Number(info.idleCloseSec) * 1000; paintSlots(); },
       });
       json = res.json;
       if (res.error && !res.text) err = new Error(res.error);
@@ -425,9 +427,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     if (r.end && sp) {
       // gone at once for the next turns; the orb leaves when its last line has been heard
       const s = slots.get(sp);
-      if (s) { s.state = 'left'; s.hangup = r.end.reason || ''; s.leftIdx = log.length; }
-      log.push({ role: 'event', content: `${nameOf(sp)} left the call.` });
-      void commitFor(sp, 'hangup');
+      const quiet = r.end.how === 'quiet';
+      if (s) { s.state = 'left'; s.hangup = r.end.reason || ''; s.leftIdx = log.length; s.how = quiet ? 'quiet' : 'storm_out'; }
+      log.push({ role: 'event', content: quiet ? `${nameOf(sp)} quietly left the call.` : `${nameOf(sp)} left the call.` });
+      void commitFor(sp, quiet ? 'quit' : 'hangup');
       r.after.push(() => personaLeft(sp));
     }
     if (r.call && sp) {
@@ -435,6 +438,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       r.after.push(() => { if (!ended) void ringCall(c.target, sp); });
     }
     const nx = r.next;
+    if (r.close) { r.after.push(() => endCall('Panggilan ditutup: sudah lama sepi.')); waitingUser = false; kick(); paintState(); return; }
     if (nx && nx !== 'user' && present().includes(nx) && !r.call) void requestTurn({ speaker: nx });
     else { waitingUser = true; if (!present().length) r.after.push(() => maybeEnd()); }
     kick(); paintState();
@@ -443,9 +447,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const s = slots.get(id);
     if (!s) return;
     caps.block('left-' + id, 'event');
-    caps.show(`${s.p.name} meninggalkan panggilan.`);
+    caps.show(s.how === 'quiet' ? `${s.p.name} pamit dari panggilan.` : `${s.p.name} meninggalkan panggilan.`);
     s.el.classList.add('leaving');
-    setTimeout(() => removeSlot(id), reducedMotion() ? 100 : 900);
+    if (s.how === 'quiet') s.el.classList.add('quiet');
+    setTimeout(() => removeSlot(id), reducedMotion() ? 100 : s.how === 'quiet' ? 1400 : 900);
     maybeEnd();
   }
   function maybeEnd() {
@@ -469,7 +474,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     stats.perExchange.push(turnsSinceUser); turnsSinceUser = 0;
     const last = log[log.length - 1];
     if ((merge || forceMerge) && last?.role === 'user') last.content = `${last.content} ${text}`.trim(); else log.push({ role: 'user', content: text });
-    forceMerge = false; nudges = 0; waitingUser = false;
+    forceMerge = false; nudges = 0; waitingUser = false; lastInputAt = performance.now();
     if (!present().length) { if (!ringing) { ui.toast('Belum ada yang di panggilan. Tambah orang dulu.', { kind: 'info' }); } if (dm.state === 'thinking') D({ type: 'quiet' }); return; }
     // the line before was cut off: resume it / rephrase / drop (decision as in Chat)
     let hint: ResumeHint | undefined;
@@ -488,12 +493,20 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   }
 
   /* ================= silence: they fill it (bicker / check on the user) ================= */
+  let maxChain = 6, idleCloseMs = 180_000, lastInputAt = performance.now(), closing = false;
   function maybeNudge() {
-    if (!waitingUser || ended || ringing || busy || player.pending > 0 || nudges >= 2) return;
+    if (!waitingUser || ended || ringing || busy || player.pending > 0) return;
     if (dm.state !== 'idle' && dm.state !== 'listening') return;
-    if (uttId || input.value.trim() || document.hidden || document.querySelector('.dlg')) { quietSince = performance.now(); return; }
+    if (uttId || input.value.trim() || document.hidden || document.querySelector('.dlg')) { quietSince = performance.now(); lastInputAt = Math.max(lastInputAt, performance.now() - 1000); return; }
     const pr = present();
-    if (!pr.length || lastChain >= 4) return;
+    if (!pr.length) return;
+    // nobody has heard from the user for a few minutes: one persona wraps the call up politely, then it ends
+    if (!closing && performance.now() - lastInputAt > idleCloseMs && performance.now() - quietSince > 2500) {
+      closing = true; quietSince = performance.now();
+      void requestTurn({ nudge: 'goodbye' });
+      return;
+    }
+    if (nudges >= 3 || lastChain >= maxChain) return;
     if (pr.length === 1 && nudges >= 1) return;
     const lastA = [...log].reverse().find((m) => m.role === 'assistant');
     const wait = (lastA && /\?\s*(\[[^\]]*\]\s*)*$/.test(lastA.content.trim()) ? NUDGE_Q_MS : NUDGE_MS) * (pr.length === 1 ? 1.6 : 1);
@@ -597,20 +610,20 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   let forceRing: string | null = null;
 
   /* ================= memory ================= */
-  async function commitFor(id: string, reason: 'duo' | 'hangup', keepalive = false) {
+  async function commitFor(id: string, reason: 'duo' | 'hangup' | 'quit', keepalive = false) {
     const s = slots.get(id);
     if (!s || s.committed) return;
     s.committed = true;
     const slice = log.slice(s.joinIdx, s.leftIdx ?? log.length).filter((m) => m.role !== 'event');
     const withList = order.map((x) => slots.get(x)!).filter((o) => o.p.id !== id && (o.state === 'on' || o.state === 'left')).map((o) => ({ id: o.p.id, name: o.p.name }));
-    if (!slice.some((m) => m.role === 'user') && reason !== 'hangup') return;
+    if (!slice.some((m) => m.role === 'user') && reason === 'duo') return;
     await commitMemory({
-      personaId: id, personaName: s.p.name, reason, hangupReason: reason === 'hangup' ? s.hangup : undefined, keepalive,
+      personaId: id, personaName: s.p.name, reason, hangupReason: reason !== 'duo' ? s.hangup : undefined, keepalive,
       messages: slice.map((m) => ({ role: m.role, content: m.content, ...(m.speaker ? { speaker: m.speaker } : {}) })),
       duo: { with: withList },
     });
   }
-  function commitAll(keepalive = false) { for (const id of [...order]) { const s = slots.get(id); if (s && (s.state === 'on' || s.state === 'left')) void commitFor(id, s.state === 'left' ? 'hangup' : 'duo', keepalive); } }
+  function commitAll(keepalive = false) { for (const id of [...order]) { const s = slots.get(id); if (s && (s.state === 'on' || s.state === 'left')) void commitFor(id, s.state === 'left' ? (s.how === 'quiet' ? 'quit' : 'hangup') : 'duo', keepalive); } }
   const onPageHide = () => commitAll(true);
   addEventListener('pagehide', onPageHide);
 
@@ -704,7 +717,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     t = t.trim(); if (!t) return;
     if (echoWindow() && isEcho(t, echoRef())) return;
     if (performance.now() - lastSound > 3000) return;
-    const id = openUtt(); uttHasText = true; quietSince = performance.now();
+    const id = openUtt(); uttHasText = true; quietSince = performance.now(); lastInputAt = performance.now();
     showYou(t, false);
     D({ type: 'partial', utt: id, text: t });
   }
@@ -806,7 +819,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   const typingNow = () => !!input.value.trim() && document.activeElement === input;
   let typingWas = false;
   const typing = (on: boolean) => { if (on !== typingWas || (on && dm.state === 'speaking')) { typingWas = on; D({ type: 'typing', on }); } else paintBar(); };
-  input.addEventListener('input', () => { autosize(); quietSince = performance.now(); typing(typingNow()); });
+  input.addEventListener('input', () => { autosize(); quietSince = performance.now(); lastInputAt = performance.now(); typing(typingNow()); });
   input.addEventListener('focus', () => { if (typingNow()) typing(true); });
   input.addEventListener('blur', () => typing(false));
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitText(); } });
@@ -845,7 +858,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const m = ui.modal({ title: 'Transkrip panggilan', cls: 'tr-dlg', body: list });
     requestAnimationFrame(() => { const b = m.root.querySelector('.dlg-b'); if (b) b.scrollTop = b.scrollHeight; });
   }
-  const eventText = (t: string) => t.replace(/^(.+) left the call\.$/, '$1 meninggalkan panggilan.').replace(/^(.+) picked up \(called by (.+)\)\.$/, (_, a, b) => `${a} mengangkat (ditelepon ${b === 'the user' ? 'kamu' : b}).`)
+  const eventText = (t: string) => t.replace(/^(.+) quietly left the call\.$/, '$1 pamit dari panggilan.').replace(/^(.+) left the call\.$/, '$1 meninggalkan panggilan.').replace(/^(.+) picked up \(called by (.+)\)\.$/, (_, a, b) => `${a} mengangkat (ditelepon ${b === 'the user' ? 'kamu' : b}).`)
     .replace(/^(.+) declined the call.*$/, '$1 menolak panggilan.').replace(/^(.+) did not answer.*$/, '$1 tidak menjawab.').replace(/^The user hung up before (.+) answered\.$/, 'Kamu membatalkan panggilan ke $1.');
   trBtn.onclick = openTranscript;
   moreBtn.onclick = () => {

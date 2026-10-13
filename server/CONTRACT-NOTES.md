@@ -255,13 +255,24 @@ The user and 1-`DUO_MAX_PERSONAS` (3) personas on ONE voice call. Personas = bui
   - SSE: `{speaker:id, chain, turn, director:{source,ms}}` first, then `{t}` deltas (never a `Name:` label: a leading label is stripped,
     a later one ends the line), optional `{end:{decision:'hangup', reason, speaker}}` (that persona LEFT the call; stored at once as a hang-up
     in its memory), optional `{call:{target, name, reason, caller}}` (it phones someone: start ringing), then `{next:'user'|id, chain, source,
-    ms:{first,total}}`, `[DONE]`. Plain JSON instead of SSE: `{next:'user', chain, capped:'chain'}` (4 persona turns in a row without the user,
+    ms:{first,total}}`, `[DONE]`. Plain JSON instead of SSE: `{next:'user', chain, capped:'chain'}` (DUO_MAX_CHAIN, default 6, persona turns in a row without the user,
     counted on the server per `callId` too) or `{next:'user', reason:'nobody'}`.
   - Errors: 409 `{error:'duo_limit', limit:'call', max}` (`DUO_MAX_PERSONA_TURNS`, default 60 persona replies per `callId`),
     409 `{error:'duo_limit', limit:'personas', max}`, 429 quota `llm`, 400 validation, 403 `voice_forbidden`.
   - Cost: each persona reply = 1 LLM request (charged before streaming; refunded only if the upstream never answered). Director, leave /
     call safety checks: decision model, not charged. No web search in duo. Each persona sees its own prompt + the GROUP CALL block
     (named transcript, who is on the line, very short lines, never a name label) + its own memory block.
+  - **Leaving** (NEW): the persona's `end_call` in a group call carries `how:'storm_out'|'quiet'` and `because:'user'|'other'|'self'`; SSE
+    `{end:{decision:'hangup', reason, speaker, how, because}}`. Show "X meninggalkan panggilan" (storm out) / "X pamit dari panggilan" (quiet).
+    The persona may leave out of its own discomfort (an escalating fight with another persona, being the third wheel, boredom), not only when
+    the user provokes it. A promise to stay in its own last lines blocks the leave; a forgotten tool after "I'll let you two talk" is placed
+    after a decision-model check. Memory at once: `last_end_reason` `hangup` (storm out; anger at the user only if `because:'user'`) or `quit`
+    (quiet), plus a shared event (kind `duo`) for the others on the call. Commit a quiet leaver with `reason:'quit'`.
+  - **Proactive** (NEW): `nudge:'silence'` now asks the persona to take the conversation somewhere (its "things on your mind", a question to
+    another persona, a memory, news, pulling the user in) instead of only filling the gap. After a user line the director allows ~3 persona
+    lines; once nudged, up to `DUO_MAX_CHAIN` (default 6) lines without the user (`{next:'user', capped:'chain'}` after that). `nudge:'goodbye'`
+    (client, after `DUO_IDLE_CLOSE_SEC`, default 180 s without user input): one persona wraps up politely; `{next:'user', close:true}` -> end the
+    call after that line. The `{speaker}` event carries `maxChain` and `idleCloseSec`.
 - `POST /api/duo/ring` (JSON). Body: `{callId, callee:Participant, caller:'user'|id (a persona in present), present:[Participant] (on the call now,
   may be empty), recent?:[{who,text}] (<=10, context only; also used to find who spoke last)}`. -> `{decision:'answer'|'decline'|'ignore'|'off',
   rings:1-4, reaction:{speaker,text}|null, after:{speaker,text}|null, attempt, maxAttempts:3, p, why:[..], ms, missed?}`.
@@ -272,7 +283,7 @@ The user and 1-`DUO_MAX_PERSONAS` (3) personas on ONE voice call. Personas = bui
   `after` (only when not answered) = that persona's short line right after the call fails. Speak them in its voice, in turn (never over
   another voice), and keep both in the transcript (they are part of that persona's conversation / memory). Decision = weighted roll: user calling 0.86 / persona 0.75; the enemy calling 0.22; the enemy on
   the call x0.6; remembered anger/coldness/hurt toward the user (decayed, memory.ts) up to -0.55; warm +; hung up on the user < 3 h -0.2;
-  every retry +0.2; then chance. `decline`/`ignore` is remembered by the callee (shared_events kind `missed`, also heard by a persona caller).
+  every retry +0.2; it left this same call earlier: storm out -0.3 to -0.45 (more when the person it left over is still on), quiet -0.12; then chance. `decline`/`ignore` is remembered by the callee (shared_events kind `missed`, also heard by a persona caller).
   3 attempts per callee per `callId`, then `{decision:'off'}` (no charge). Cost: 1 call (`DUO_MAX_CALLS_PER_DAY` 40, admin override
   `callPerDay`, 429 `{error:'quota', kind:'call'}`) + 1 LLM request only when someone reacts (the call is refunded if the LLM quota check fails). 409 `duo_limit personas` when full.
   Dev only (`DEV_FAKE_LOGIN`, not production): `force:'answer'|'decline'|'ignore'` for tests.

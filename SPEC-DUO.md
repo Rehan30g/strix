@@ -51,5 +51,19 @@ Not a phone UI: one shared room, two orbs side by side. Builds on the cross-conv
 - Memory as above, plus missed calls and links (custom personas share news only with personas they have been on a call with).
   Contract: server/CONTRACT-NOTES.md "Duo / group calls".
 
+## Leaving on their own, and proactive talk (user decision, 2026-10-13)
+- Leaving: in a group call `end_call` means "I leave this call" and takes `how` ("storm_out" | "quiet") and `because` ("user" | "other" | "self").
+  A persona's own discomfort is reason enough: a fight with another persona that keeps escalating (never on the first jab: annoyed -> firm ->
+  leaves), being stuck as the third person in someone else's fight, feeling unwanted, or plain boredom ("I'll let you two talk", "I'm gonna go
+  put the kettle on"). A private cue is added when the room has been heated for several lines or when the persona is the third wheel. Safety
+  net: a line that says it is leaving but forgot the tool is confirmed by the decision model; a persona that promised to stay in its last lines
+  cannot leave (the tool is ignored). The others react; the user can call it back (the ring decision weighs how and why it left this call).
+  Memory: storm out = `hangup` (anger aimed at the user only when the user caused it), quiet = `quit`; a shared `duo` event tells the others.
+- Proactive: right after the user the personas answer in a short back-and-forth (~3 lines); when the user stays quiet (~7 s, after a question
+  ~12 s) they are nudged and carry their own conversation on up to `DUO_MAX_CHAIN` (6) lines without the user, then wait. Each persona gets a
+  few random "things on your mind" per call (its life, a question for the other, a memory, news...), an agenda instead of waiting for the user,
+  and enemies warm up (cold small talk, nostalgia, then sparks) instead of fighting from the first line. A natural pause of 0.6-1.5 s sits
+  between two persona lines. After `DUO_IDLE_CLOSE_SEC` (180) with no input from the user, one persona wraps the call up and it ends.
+
 ## Verification
 Real services; scripted multi-turn scenarios: (1) neutral user, they bicker and the user stays out for a beat, (2) user sides with one, (3) user provokes both, one hangs up and the other stays, (4) gentle path, (5) interruption mid-sentence and resume, (6) memory and shared events written and used in the next solo chat, (7) turn caps, (8) quota and abort. UI e2e in headless Edge at 390 and 1366 with fake mic audio, frames reviewed by eye.

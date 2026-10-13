@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS persona_memory (
   facts_json TEXT NOT NULL DEFAULT '[]',
   mood_json TEXT,
   last_end_at INTEGER,
-  last_end_reason TEXT,               -- hangup | restart | switch | idle | duo
+  last_end_reason TEXT,               -- hangup | quit (left a group call quietly) | restart | switch | idle | duo
   last_end_note TEXT,                 -- end_call reason (neutral sentence) when the persona hung up
   lang TEXT,                          -- language the user spoke last time (for the opener)
   turns INTEGER NOT NULL DEFAULT 0,   -- user turns summarised so far

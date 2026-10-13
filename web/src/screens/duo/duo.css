@@ -87,3 +87,6 @@
   .duo-slot[data-state="ringing"] .duo-orb, .duo-slot[data-state="ringing"] .duo-ringfx, .duo-slot.joined .duo-orb { animation: none !important; }
   .duo-slot[data-state="ringing"] .duo-ringfx { opacity: .6; }
 }
+/* a quiet exit: a slow fade in place (a storm-out drops and drifts away faster) */
+.duo-slot.leaving.quiet { --away: 0px !important; }
+.duo-slot.leaving.quiet .duo-orb { transform: scale(calc(var(--k) * .7)); transition-duration: 1.3s; filter: saturate(.5); }

@@ -3,7 +3,7 @@
    - POST /api/duo/turn (SSE): a small DIRECTOR picks who speaks (rules first, the decision model only when it is not
      obvious; never charged), then ONE persona replies with its own prompt + the DUO block (named transcript) + its memory.
      Events: {speaker} -> {t}... -> {end} (that persona left) / {call} (it phones someone) -> {next} -> [DONE].
-     Each persona reply = 1 LLM request (chargeLlm). Caps: DUO_MAX_PERSONA_TURNS per call, 4 persona turns in a row
+     Each persona reply = 1 LLM request (chargeLlm). Caps: DUO_MAX_PERSONA_TURNS per call, DUO_MAX_CHAIN (6) persona turns in a row
      without the user, 1 outgoing persona call per call. No web search here.
    - POST /api/duo/ring (JSON): someone (the user or a persona on the call) rings a persona. While it rings, a persona
      ALREADY on the call reacts out loud (the callee's enemy first, else whoever spoke last; never the caller itself); the
@@ -85,13 +85,22 @@ async function resolveAll(userId: number, list: ParticipantIn[]): Promise<Part[]
 }
 
 /* ---------------- per-call state (in memory; a restart only loosens the caps of calls that were running) ---------------- */
-interface CallState { turns: number; chain: number; userKey: string; callsMade: number; rings: Record<string, number>; at: number }
+interface Left { how: 'storm_out' | 'quiet'; because: 'user' | 'other' | 'self'; reason: string; at: number }
+interface CallState {
+  turns: number; chain: number; userKey: string; callsMade: number; rings: Record<string, number>; at: number;
+  /** small random "things on your mind" per persona, picked once per call (variety between calls) */
+  seeds: Record<string, string[]>;
+  /** who left this call, how and why (ring decisions and the greeting after a call-back use it) */
+  left: Record<string, Left>;
+  /** the user went quiet and the personas were nudged: their exchange may run up to DUO_MAX_CHAIN lines (else ~3) */
+  nudged: boolean;
+}
 const calls = new Map<string, CallState>();
 function callState(userId: number, callId: string): CallState {
   const k = `${userId}:${callId}`;
   let s = calls.get(k);
   if (!s) {
-    s = { turns: 0, chain: 0, userKey: '', callsMade: 0, rings: {}, at: Date.now() };
+    s = { turns: 0, chain: 0, userKey: '', callsMade: 0, rings: {}, at: Date.now(), seeds: {}, left: {}, nudged: false };
     calls.set(k, s);
     if (calls.size > 3000) { const cut = Date.now() - 6 * 3_600_000; for (const [kk, v] of calls) if (v.at < cut) calls.delete(kk); }
   }
@@ -126,16 +135,61 @@ function mentions(text: string, parts: Part[]): Part[] {
 /* ---------------- the director ---------------- */
 interface Pick { next: string; hint: string; source: 'rule' | 'llm' | 'fallback'; ms?: number; /** ask the director among these (speculating on next) */ llm?: string[] }
 const DIRECTOR_SYSTEM = `You direct the turn order of a live group VOICE call between a user and some characters. Decide who speaks next so it sounds like a real, lively conversation, not an interview. Output ONLY JSON {"next":"<id or user>"}.
-- "user": the last line asked the user something directly, invited the user's opinion, or the characters have had their say and it is naturally the user's turn.
-- a character id: that character was addressed, accused, mocked or asked by the last line, or would naturally jump in to react (a jab begs a comeback; a dodge begs a push). Prefer short back-and-forths of two or three lines between characters before going back to the user.
+- "user": the last line clearly asked the user something or spoke to the user, invited the user's opinion, or the characters' exchange has run its course and it is naturally the user's turn.
+- a character id: that character was addressed, accused, mocked or asked by the last line, or would naturally jump in to react (a jab begs a comeback; a dodge begs a push; a story begs a reaction). While the user is quiet, the characters are allowed to keep a lively exchange going between themselves for several lines (up to the limit given) instead of handing back to the user after every line.
 Never pick the character who spoke the last line. Pick only from the allowed list.`;
+
+/* ---------------- topic seeds: a few small things on each persona's mind, different every call ---------------- */
+const SEEDS_ANY = [
+  'something small that went wrong (or right) today', 'what you ate today, or are craving', 'where you are right now and what is around you (the room, the weather, a noise)',
+  'a question you are honestly curious to ask {other} about their life these days', 'a bit of news or gossip you heard lately', 'a plan (or a lack of one) for the weekend',
+  'a tiny story from this week', 'something the user said earlier that stuck with you', 'a light tease about someone on the call', 'a habit or hobby you are into lately (no brand or title names)',
+  'a strong opinion about something completely trivial', 'how tired / wired / cheerful you are tonight, and why', 'a small worry you have not told anyone', 'something that made you laugh recently',
+];
+const SEEDS_OWN: Record<string, string[]> = {
+  strix: ["the kids' latest game", 'the school run chaos', "your partner's terrible idea this week", 'a bad dad joke you have been saving'],
+  lena: ["your son's dinner demands", 'the group chat drama', 'the meeting that should have been an email', 'something at work you fixed and nobody noticed'],
+};
+const SEEDS_FEUD = ['one of the old Tuesday-night shows (a good memory, before it soured)', 'the two coffees', 'how {other} sounds these days', 'a caller from the old show you both remember'];
+function seedsFor(st: CallState, me: Part, parts: Part[]): string[] {
+  if (st.seeds[me.id]) return st.seeds[me.id];
+  const pick = <T,>(a: T[], n: number) => [...a].sort(() => Math.random() - 0.5).slice(0, n);
+  const other = parts.find((p) => p.id !== me.id)?.name ?? 'the others';
+  const enemy = parts.find((p) => isEnemy(me.id, p.id));
+  const out = [...pick(SEEDS_ANY, 2), ...pick(SEEDS_OWN[me.id] ?? [], 1), ...(enemy && Math.random() < 0.6 ? pick(SEEDS_FEUD, 1) : [])]
+    .map((s) => s.replaceAll('{other}', enemy?.name ?? other));
+  return (st.seeds[me.id] = out);
+}
+
+/* ---------------- leaving: the persona's own decision (storm out / quiet exit), never right after a promise to stay ---------------- */
+const STAY_RE = /\b(i (won'?t|will not|am not|'?m not) (gonna |going to )?(hang up|leave|go anywhere|bail|walk out|run off)|i'?ll stay|i'?m staying|not going anywhere|i promise)\b/i;
+/** Did `me` promise to stay in its own last few lines? */
+const promisedStay = (msgs: Msg[], me: string) => msgs.filter((m) => m.role === 'assistant' && m.speaker === me).slice(-4).some((m) => STAY_RE.test(tagless(said(m))));
+const LEAVE_RE = /\b(hang(?:ing)? up|i'?m (?:done|out|off|leaving|out of here|gonna go|going to go|heading off)|we'?re (?:done|finished)|i'?ll (?:leave|go|head off|hop off|let you (?:two|guys|all|both)\b)|let you (?:two|guys|all|both) (?:talk|chat|catch up|get on with it)|leave you (?:two|to it)|(?:gotta|got to|have to|need to) go|put the kettle on|bye(?: for now)?|catch you later|see you(?: later)?|night,? (?:all|everyone)|i'?m hanging up)\b/i;
+async function announcesLeave(text: string, lastOther: string, signal: AbortSignal): Promise<boolean> {
+  const tail = text.slice(-220);
+  if (!LEAVE_RE.test(tail)) return false;
+  try {
+    const r = await openrouter({
+      model: config.decisionModel, stream: false, temperature: 0, max_tokens: 20, reasoning: { enabled: false }, provider: { sort: 'latency', allow_fallbacks: true },
+      messages: [
+        { role: 'system', content: 'You judge one line of a spoken group call. Reply ONLY with JSON {"leaving":true} or {"leaving":false}. leaving is true ONLY if the speaker, in this very reply, is leaving / hanging up / stepping off the call RIGHT NOW (angrily or politely, e.g. "I\'m done, bye", "I\'ll let you two talk", "I\'m gonna go put the kettle on, night"). False for threats or conditions ("one more word and I\'m gone"), promises to stay, questions, or talk about someone else leaving.' },
+        { role: 'user', content: `Someone else last said: ${lastOther.slice(0, 300)}\nThe speaker's reply: ${tail}` },
+      ],
+    }, AbortSignal.any([signal, AbortSignal.timeout(2500)]), 'Strix duo leave check');
+    if (!r.ok) return false;
+    const j: any = await r.json();
+    const o = JSON.parse(String(j?.choices?.[0]?.message?.content ?? '').match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+    return o.leaving === true;
+  } catch { return false; }
+}
 
 async function llmDirect(parts: Part[], present: string[], msgs: Msg[], allowed: string[], signal: AbortSignal, userId: number): Promise<string | null> {
   const nameOf = (id?: string | null) => parts.find((p) => p.id === id)?.name ?? 'someone';
   const lines = msgs.slice(-8).map((m) => m.role === 'event' ? `(${oneLine(m.content).slice(0, 160)})` : `${m.role === 'user' ? 'User' : nameOf(m.speaker)}: ${tagless(said(m)).slice(0, 300)}`);
   const user = [
     `Characters on the call: ${present.map((id) => `${nameOf(id)} (id ${id})`).join(', ')}.`,
-    `Character lines since the user last spoke: ${chainOf(msgs)}.`,
+    `Character lines since the user last spoke: ${chainOf(msgs)} (at most ${config.duo.maxChain} before the user must get the turn).`,
     `Recent lines:\n${lines.join('\n')}`,
     `Allowed answers: ${allowed.map((a) => `"${a}"`).join(', ')}.`,
   ].join('\n');
@@ -157,7 +211,7 @@ async function llmDirect(parts: Part[], present: string[], msgs: Msg[], allowed:
 /** Who speaks now (before streaming). null = the user's turn (nothing to stream). */
 async function pickSpeaker(a: {
   parts: Part[]; present: string[]; msgs: Msg[]; join: { id: string; caller: string } | null; opener: boolean;
-  nudge: boolean; want: string | null; resumeHint: string | null; signal: AbortSignal; userId: number;
+  nudge: 'silence' | 'goodbye' | null; want: string | null; resumeHint: string | null; signal: AbortSignal; userId: number; left: Record<string, Left>;
 }): Promise<Pick | null> {
   const { parts, present, msgs } = a;
   const P = (id: string) => parts.find((p) => p.id === id)!;
@@ -169,7 +223,9 @@ async function pickSpeaker(a: {
   if (a.join && present.includes(a.join.id)) {
     const by = a.join.caller === 'user' ? 'the user' : P(a.join.caller)?.name ?? 'someone';
     const rest = others(a.join.id).map((p) => p.name);
-    return { next: a.join.id, source: 'rule', hint: `You have just picked up: ${by} called you${rest.length ? `, and ${rest.join(' and ')} ${rest.length > 1 ? 'are' : 'is'} on the line too` : ''}. Say your first line now, in your mood: greet or don't, react to who is on this call.` };
+    const lf = a.left[a.join.id];
+    const back = lf ? ` You LEFT this same call ${Math.max(1, Math.round((Date.now() - lf.at) / 60_000))} min ago (${lf.how === 'storm_out' ? 'you stormed out' : 'you slipped out quietly'}${lf.reason ? `: ${lf.reason}` : ''}) and now you picked up again: let that show.` : '';
+    return { next: a.join.id, source: 'rule', hint: `You have just picked up: ${by} called you${rest.length ? `, and ${rest.join(' and ')} ${rest.length > 1 ? 'are' : 'is'} on the line too` : ''}.${back} Say your first line now, in your mood: greet or don't, react to who is on this call.` };
   }
   if (a.opener || !last) return { next: here[0].id, source: 'rule', hint: 'The call has just connected. Say your opening line.' };
   // "go on" after the user cut someone off: the same persona carries on
@@ -189,10 +245,14 @@ async function pickSpeaker(a: {
   }
   // a persona spoke last: another persona carries on (never the same one twice in a row unless it is alone)
   const cands = others(lp?.speaker).length ? others(lp?.speaker) : here;
-  if (a.nudge) {
+  if (a.nudge === 'goodbye') {
     const who = cands.find((p) => p.id === a.want) ?? cands[0];
+    return { next: who.id, source: 'rule', hint: 'The user has not said anything for a few minutes. Wrap the call up politely in character, for everyone: ONE short line that you will let them go (e.g. "we will let you go"), maybe a tiny goodbye. Do not ask anything.' };
+  }
+  if (a.nudge) {
+    const who = cands.find((p) => p.id === a.want) ?? cands[Math.floor(Math.random() * cands.length)];
     const rest = others(who.id).map((p) => p.name);
-    return { next: who.id, source: 'rule', hint: `Nobody has said anything for a few seconds. Fill the silence in character${rest.length ? `: needle ${rest.join(' or ')}, or check on the user` : ': check on the user'} (by name if you know it). Do not repeat yourself.` };
+    return { next: who.id, source: 'rule', hint: `Nobody has said anything for a few seconds. Do not just fill the silence: take the conversation somewhere. Bring up something on your mind (see THINGS ON YOUR MIND), ask ${rest.length ? rest.join(' or ') : 'the user'} something real, tell a tiny story, comment on where you are, bring up a shared memory or news you heard, or tease someone${rest.length ? '' : ''}. Or pull the user in naturally by name if you know it (\"you're quiet\"), without repeating a question you already asked them. Not the same topic as the last few lines.` };
   }
   const lpName = P(lp?.speaker ?? '')?.name ?? 'Someone';
   if (a.want && cands.some((p) => p.id === a.want)) {
@@ -204,31 +264,57 @@ async function pickSpeaker(a: {
 }
 
 /** After a persona line: does another persona jump in, or is it the user's turn? */
-async function pickNext(a: { parts: Part[]; present: string[]; msgs: Msg[]; speaker: string; left: boolean; called: boolean; signal: AbortSignal; userId: number }): Promise<{ next: string; source: string }> {
+async function pickNext(a: { parts: Part[]; present: string[]; msgs: Msg[]; speaker: string; left: boolean; called: boolean; signal: AbortSignal; userId: number; limit: number }): Promise<{ next: string; source: string }> {
   const { parts, present, msgs } = a;
   const here = parts.filter((p) => present.includes(p.id));
   const others = here.filter((p) => p.id !== a.speaker);
   const chain = chainOf(msgs);
   if (a.called || !others.length || chain >= config.duo.maxChain) return { next: 'user', source: 'rule' };
   if (a.left) return { next: others[0].id, source: 'rule' };      // someone just walked out: the rest react
-  if (chain >= 3) return { next: 'user', source: 'rule' };
+  // right after the user: a short back-and-forth (~3 lines), then the user again; when the user has gone quiet (nudged)
+  // the personas may carry their own conversation on up to DUO_MAX_CHAIN lines
+  if (chain >= a.limit) return { next: 'user', source: 'rule' };
   const line = tagless(said(msgs[msgs.length - 1]));
   const named = mentions(line, others);
   if (named.length) return { next: named[0].id, source: 'rule' };
-  if (/\?\s*$/.test(line) && chain >= 2) return { next: 'user', source: 'rule' };
   const llm = await llmDirect(parts, present, msgs, [...others.map((p) => p.id), 'user'], a.signal, a.userId);
   if (llm) return { next: llm, source: 'llm' };
-  return { next: chain <= 1 ? others[0].id : 'user', source: 'fallback' };
+  return { next: chain <= 2 ? others[0].id : 'user', source: 'fallback' };
+}
+
+/* ---------------- discomfort: a nudge toward leaving when it is really getting to someone ---------------- */
+const HOT_RE = /\[(?:[^\]]*\b(?:angry|furious|cold|bitter|sharp exhale|snapping|through gritted teeth|raised voice|shouting|hurt|scoffs?|irritated|annoyed|tense|defensive|sulky)\b[^\]]*)\]|\b(coward|liar|you always|you never|fuck|shit|don'?t you dare|not doing this|low blow|that'?s not fair)\b/i;
+/** A short private cue for `me` when the room has been hostile for a while (the ladder is real: only after several heated
+    lines, never on the first jab), or when `me` is the third person stuck in someone else's fight. '' otherwise. */
+function discomfortHint(me: Part, parts: Part[], present: string[], msgs: Msg[]): string {
+  const recent = msgs.filter((m) => m.role !== 'event').slice(-6);
+  const heat = recent.filter((m) => HOT_RE.test(m.role === 'assistant' ? said(m) : m.content)).length;
+  const mine = recent.filter((m) => m.role === 'assistant' && m.speaker === me.id);
+  const myHeat = mine.filter((m) => HOT_RE.test(said(m))).length;
+  const here = parts.filter((p) => present.includes(p.id) && p.id !== me.id);
+  const feud = here.some((a) => here.some((b) => a.id !== b.id && isEnemy(a.id, b.id)));
+  if (feud && !here.some((p) => isEnemy(me.id, p.id)) && heat >= 2) {
+    // it already hinted at going ("should I go check the oven?", "I'm not the referee") and the fight goes on: now it goes
+    const hinted = mine.some((m) => /\b(should i|maybe i should|i'?ll (just )?(go|leave|let you)|not the referee|check on the oven|in the middle|leave you (two|to it)|uncomfortable)\b|\[(uncomfortable|awkward[^\]]*|sheepish|gulps)\]/i.test(said(m)));
+    if (hinted && heat >= 3) return ' (Private: you already hinted you would rather not be here, and the fight is still going. Now actually go: one short polite goodbye line, then end_call with how "quiet", because "other".)';
+    return ' (Private: you are the third person stuck in the middle of someone else\'s fight. If you feel in the way or uncomfortable, a polite quiet exit is completely fine, or try to change the subject once.)';
+  }
+  if (heat >= 3 && myHeat >= 2) {
+    return ' (Private: this has been getting to you for several lines now. If it keeps going this way, you are at the top of your ladder: you may leave this call, storming out or slipping away quietly, whatever is true for you. Or, if something genuinely shifts, soften.)';
+  }
+  return '';
 }
 
 /* ---------------- prompts ---------------- */
 const DUO_END_RULES = `
 
-LEAVING THE CALL: you have a tool end_call that takes YOU off this group call (the others stay on and keep talking without you). Use it only when, in character, you have genuinely had enough: someone keeps pushing, insulting or provoking you after you already showed you were upset, or you have clearly decided you are done with this call. Never for a single rude line or mild discomfort. First say your short final line in the same reply (angry, cold, hurt or simply done), then call end_call in that same turn with a one-sentence neutral reason for the screen. Do not threaten to leave over and over without doing it.
+LEAVING THE CALL: you have a tool end_call that takes YOU off this group call (the others stay on and carry on without you). In a group call it means "I'm leaving this call", and YOUR OWN discomfort is a valid reason: you do not have to wait for the user to provoke you. Two ways:
+- how "storm_out": you have had enough. The user keeps being rude or keeps pushing, OR a fight with someone else on the call keeps escalating (your ex keeps dodging, keeps cornering you about the past, keeps poking the sore spot, or you feel ganged up on). Never on the first jab: there is a ladder, and you climb it over several of your lines (annoyed -> firm, you say plainly what is not okay -> you go). When you are at the top of it, actually go: say your last line, then call end_call. Do not threaten again and again without doing it.
+- how "quiet": a polite exit for a milder discomfort, when you feel unwanted or in the way, when two others clearly need to talk without you, or when the conversation simply is not for you any more ("I'll let you two talk.", "I'm gonna go put the kettle on, night."). One short goodbye line, then end_call.
+Set because: "user" (the user's doing), "other" (someone else on the call), or "self" (just you: tired, bored, out of your depth). In the same reply: first your last line out loud, then end_call with how, because and a one-sentence neutral reason for the screen.
 
-PROMISES: if you promised something on this call (for example "I won't hang up"), you keep it. Breaking one needs a real reason, and you say so out loud. If you just agreed not to leave, do NOT call end_call in that reply or the next ones.`;
-
-function duoBlock(me: Part, parts: Part[], present: string[], met: Set<string>) {
+PROMISES: if you promised something on this call (for example "I won't hang up", "I'll stay"), you keep it. Breaking one needs a real reason and you say so out loud. If you just agreed to stay, do NOT call end_call in that reply or the next ones.`;
+function duoBlock(me: Part, parts: Part[], present: string[], met: Set<string>, seeds: string[]) {
   const others = parts.filter((p) => p.id !== me.id);
   const on = others.filter((p) => present.includes(p.id));
   const gone = others.filter((p) => !present.includes(p.id));
@@ -252,18 +338,20 @@ How to talk here:
 - Call the user by name if you know it (from memory or this call); otherwise just "you".
 - EVEN SHORTER than usual, because several people share the air: ONE sentence, 5-15 words, never more than about 25. Often a quick reaction is enough.
 - Stay yourself: ${me.style}.${contrast ? ` Do not start sounding like the others (${contrast}).` : ''}
-- Feelings are real here. Provocation, from the user or from someone on the call, can make you properly angry, and you may leave the call (end_call). A genuinely gentle, sincere moment can make you soften, or even apologise first, slowly and in your own way; never because of flattery or because someone pushes you to.
-- If someone leaves the call or joins it, react to that in character.`;
+- You are not here to wait for the user. You have your own agenda and feelings: things you want to talk about (from your memory, your mood, your life, the situation), questions for the others, little stories, opinions. Cut in, change the subject, tease, joke, bicker, get curious about someone. Do not keep asking the user questions; now and then pull them in naturally (by name if you know it: "you've gone quiet"), and otherwise just talk with the others.
+- Old enemies do not fight non-stop: cold small talk, a dry joke, a flash of nostalgia, and then something sparks. Let things build instead of exploding in the first line.
+- Feelings are real here. Provocation, from the user or from someone on the call, can make you properly angry; discomfort can make you leave (see LEAVING THE CALL). A genuinely gentle, sincere moment can make you soften, or even apologise first, slowly and in your own way; never because of flattery or because someone pushes you to.
+- If someone leaves the call or joins it, react to that in character (relieved, awkward, angry, sorry: whatever is true for you).${seeds.length ? `\nTHINGS ON YOUR MIND TODAY (use at most one at a time, only when there is a lull or it fits; never list them): ${seeds.join('; ')}.` : ''}`;
 }
 
-function buildSystem(me: Part, parts: Part[], present: string[], mem: string, callTargets: Callable[], met: Set<string>) {
+function buildSystem(me: Part, parts: Part[], present: string[], mem: string, callTargets: Callable[], met: Set<string>, seeds: string[] = []) {
   const english = isEnglish(me.language);
   const langNote = !english && !me.mirror
     ? `\n\nLANGUAGE NOTE: your spoken words are in ${me.language}, so write fillers and hesitations the way ${me.language} speakers really say them. Audio tags stay in English inside [brackets].` : '';
   const accent = me.kind === 'custom' && me.accent
     ? `\n\nACCENT: the character speaks with a ${me.accent} accent. Keep the wording plain and natural; no stereotyped slang, no phonetic spelling, never mention the accent and never write an accent tag yourself.` : '';
   return me.system + baseRules(me.language, me.mirror) + me.voiceRules + langNote + accent + DUO_END_RULES + mem
-    + (callTargets.length ? callRules(callTargets, ENEMIES[me.id] ?? []) : '') + duoBlock(me, parts, present, met);
+    + (callTargets.length ? callRules(callTargets, ENEMIES[me.id] ?? []) : '') + duoBlock(me, parts, present, met, seeds);
 }
 
 /** The named transcript as chat turns from `me`'s point of view: its own lines = assistant, everything else = user. */
@@ -340,7 +428,8 @@ const turnBody = z.object({
   present: z.array(ID).max(6),
   messages: z.array(msgSchema).max(400),
   opener: z.boolean().optional(),
-  nudge: z.enum(['silence']).optional().nullable(),
+  // silence: fill a lull (open a topic...); goodbye: the user has been silent for DUO_IDLE_CLOSE_SEC: one persona wraps the call up
+  nudge: z.enum(['silence', 'goodbye']).optional().nullable(),
   // the {next} of the previous turn (re-validated here)
   speaker: ID.optional().nullable(),
   // the persona who just picked up (it speaks first)
@@ -381,31 +470,33 @@ export async function duoRoutes(app: FastifyInstance) {
     // chain (persona turns without the user): from the transcript AND from our own count (a client cannot reset it)
     const lu = [...msgs].reverse().find((m) => m.role === 'user');
     const userKey = `${b.messages.filter((m) => m.role === 'user').length}:${lu ? lu.content.slice(0, 80) : ''}`;
-    if (userKey !== st.userKey) { st.userKey = userKey; st.chain = 0; }
+    if (userKey !== st.userKey) { st.userKey = userKey; st.chain = 0; st.nudged = false; }
+    if (b.nudge === 'silence') st.nudged = true;
     const chain = Math.max(chainOf(msgs), st.chain);
     if (!present.length) return { next: 'user', chain, reason: 'nobody' };
     if (st.turns >= config.duo.maxPersonaTurns) return fail(reply, 409, { error: 'duo_limit', limit: 'call', max: config.duo.maxPersonaTurns });
-    if (chain >= config.duo.maxChain && !b.join) return { next: 'user', chain, capped: 'chain' };
+    if (chain >= config.duo.maxChain && !b.join && b.nudge !== 'goodbye') return { next: 'user', chain, capped: 'chain' };
 
     const ac = abortOnClose(req, reply);
     const t0 = Date.now();
-    const pick0 = await pickSpeaker({ parts, present, msgs, join: b.join ? { id: norm(b.join.id), caller: b.join.caller === 'user' ? 'user' : norm(b.join.caller) } : null, opener: !!b.opener, nudge: b.nudge === 'silence', want: b.speaker ? norm(b.speaker) : null, resumeHint: b.resumeHint ?? null, signal: ac.signal, userId: user.id });
+    const pick0 = await pickSpeaker({ parts, present, msgs, join: b.join ? { id: norm(b.join.id), caller: b.join.caller === 'user' ? 'user' : norm(b.join.caller) } : null, opener: !!b.opener, nudge: b.nudge ?? null, left: st.left, want: b.speaker ? norm(b.speaker) : null, resumeHint: b.resumeHint ?? null, signal: ac.signal, userId: user.id });
     if (ac.signal.aborted) return reply;
     if (!pick0) return { next: 'user', chain };
     // who this persona may phone (never someone already on the call, at most one call per call, room left)
     const room = present.length < config.duo.maxPersonas;
     const model = lockedModel();
     const prov = providerPref();
-    const endTool = { type: 'function', function: { name: 'end_call', description: 'Leave this group call (the others stay). Say your short final line first in the same reply. Only when you have genuinely had enough (see LEAVING THE CALL).', parameters: { type: 'object', properties: { reason: { type: 'string', description: 'One short neutral sentence for the screen about why you left (not in character, no insults).' } }, required: ['reason'] } } };
+    const endTool = { type: 'function', function: { name: 'end_call', description: 'Leave this group call yourself (the others stay). Say your short last line first in the same reply. See LEAVING THE CALL: storm out when you have had enough, or slip out quietly when you are uncomfortable, unwanted or done.', parameters: { type: 'object', properties: { how: { type: 'string', enum: ['storm_out', 'quiet'] }, because: { type: 'string', enum: ['user', 'other', 'self'], description: 'whose doing: the user, someone else on the call, or just you' }, reason: { type: 'string', description: 'One short neutral sentence for the screen about why you left (not in character, no insults).' } }, required: ['how', 'because', 'reason'] } } };
     /** everything for one persona's reply; `open()` starts the upstream stream */
-    const prepare = (me: Part, hint: string) => {
+    const prepare = (me: Part, hint0: string) => {
+      const hint = (hint0 + discomfortHint(me, parts, present, msgs)).trim();
       const callTargets = !room || st.callsMade >= 1 || limitsFor(user).callPerDay <= 0 ? []
         : (b.callable ?? []).filter((t) => !present.includes(norm(t.id)) && norm(t.id) !== me.id).slice(0, 8);
       const mem = memoryContext(user.id, me.id, me.name);
       const { history, cut } = buildHistory(me, parts, msgs);
-      const stage = `(Stage note for ${me.name}, not part of the call: it is your turn to speak now.${hint ? ' ' + hint : ''} Say only your own words, out loud: ONE short sentence, 5-15 words (about 25 at most), with one or two lowercase [audio tags] that fit your feeling (different from your last line), no name label, no narration, never anyone else's line.${me.mirror ? ' Speak the language the user speaks (English if unclear).' : !isEnglish(me.language) ? ` Speak ${me.language}.` : ''})`;
+      const stage = `(Stage note for ${me.name}, not part of the call: it is your turn to speak now.${hint ? ' ' + hint : ''}${promisedStay(msgs, me.id) ? ' You promised to stay on this call: keep that promise.' : ''} Say only your own words, out loud: ONE short sentence, 5-15 words (about 25 at most), with one or two lowercase [audio tags] that fit your feeling (different from your last line), no name label, no narration, never anyone else's line.${me.mirror ? ' Speak the language the user speaks (English if unclear).' : !isEnglish(me.language) ? ` Speak ${me.language}.` : ''})`;
       if (history[history.length - 1].role === 'user') history[history.length - 1].content += '\n\n' + stage; else history.push({ role: 'user', content: stage });
-      const system = buildSystem(me, parts, present, mem.block, callTargets, new Set(connectedTo(user.id, me.id))) + (cut ? interruptedNote(cut, b.resumeHint ?? null) : '');
+      const system = buildSystem(me, parts, present, mem.block, callTargets, new Set(connectedTo(user.id, me.id)), seedsFor(st, me, parts.filter((x) => present.includes(x.id)))) + (cut ? interruptedNote(cut, b.resumeHint ?? null) : '');
       const tools = [endTool, ...(callTargets.length ? [callPersonaTool(callTargets)] : [])];
       const convo: any[] = [{ role: 'system', content: system }, ...history];
       const open = (signal: AbortSignal, force?: 'end_call' | 'call_persona') => openrouter({
@@ -453,7 +544,7 @@ export async function duoRoutes(app: FastifyInstance) {
     sseHeaders(reply);
     reply.send(out);
     const send = (obj: unknown) => { if (!out.writableEnded) out.write(`data: ${JSON.stringify(obj)}\n\n`); };
-    send({ speaker: me.id, chain: st.chain, turn: st.turns, director: { source: pick.source, ms: pick.ms ?? 0 } });
+    send({ speaker: me.id, chain: st.chain, turn: st.turns, maxChain: config.duo.maxChain, idleCloseSec: config.duo.idleCloseSec, director: { source: pick.source, ms: pick.ms ?? 0 } });
     const labels = labelRe(parts);
 
     void (async () => {
@@ -488,7 +579,8 @@ export async function duoRoutes(app: FastifyInstance) {
       const text = relayed.trim();
       // said it is leaving but forgot the tool: complete the call (same safety net as /api/chat)
       const lastOther = [...msgs].reverse().find((m) => m.role !== 'event' && m.speaker !== me.id);
-      if (!callsList.length && text && await announcesHangup(text, lastOther ? tagless(said(lastOther)) : '', ac.signal)) {
+      const stayed = promisedStay(msgs, me.id);
+      if (!callsList.length && text && !stayed && (await announcesHangup(text, lastOther ? tagless(said(lastOther)) : '', ac.signal) || await announcesLeave(text, lastOther ? tagless(said(lastOther)) : '', ac.signal))) {
         try {
           convo.push({ role: 'assistant', content: text });
           const forced = await open('end_call');
@@ -505,13 +597,21 @@ export async function duoRoutes(app: FastifyInstance) {
       }
       let left = false;
       const endCall = callsList.find((c) => c.name === 'end_call');
-      if (endCall) {
-        let why = '';
-        try { why = oneLine(String(JSON.parse(endCall.args || '{}').reason ?? '')).slice(0, 300); } catch { /* defaults */ }
-        if (!text) send({ t: '[sighs] I\'m done. Bye.' });
-        send({ end: { decision: 'hangup', reason: why, speaker: me.id } });
+      if (endCall && stayed) req.log.info({ userId: user.id, speaker: me.id }, 'duo: leave ignored (promised to stay)');
+      if (endCall && !stayed) {
+        let why = '', how: Left['how'] = 'storm_out', because: Left['because'] = 'user';
+        try {
+          const a = JSON.parse(endCall.args || '{}');
+          why = oneLine(String(a.reason ?? '')).slice(0, 300);
+          if (a.how === 'quiet') how = 'quiet';
+          if (a.because === 'other' || a.because === 'self') because = a.because;
+        } catch { /* defaults */ }
+        if (!text) send({ t: how === 'quiet' ? "[softly] I'll let you all talk. Bye." : '[sighs] I\'m done. Bye.' });
+        send({ end: { decision: 'hangup', reason: why, speaker: me.id, how, because } });
         left = true;
-        try { noteHangup(user.id, me.id, why || 'left the group call'); } catch (e) { req.log.warn({ err: (e as Error).message }, 'duo: noteHangup failed'); }
+        st.left[me.id] = { how, because, reason: why, at: Date.now() };
+        const rest = parts.filter((x) => present.includes(x.id) && x.id !== me.id);
+        try { noteHangup(user.id, me.id, why || 'left the group call', { how, because, with: rest.map((x) => ({ id: x.id, name: x.name })), name: me.name }); } catch (e) { req.log.warn({ err: (e as Error).message }, 'duo: noteHangup failed'); }
       }
       const placed = !left && callTargets.length ? parseCall(callsList, callTargets) : null;
       if (placed) {
@@ -521,8 +621,8 @@ export async function duoRoutes(app: FastifyInstance) {
       }
       const nowPresent = left ? present.filter((id) => id !== me.id) : present;
       const after: Msg[] = [...msgs, { role: 'assistant', speaker: me.id, content: text || '…' }];
-      const nx = nowPresent.length ? await pickNext({ parts, present: nowPresent, msgs: after, speaker: me.id, left, called: !!placed, signal: ac.signal, userId: user.id }) : { next: 'user', source: 'rule' };
-      send({ next: nx.next, chain: st.chain, source: nx.source, ms: { first: firstAt ? firstAt - t0 : null, total: Date.now() - t0 } });
+      const nx = b.nudge === 'goodbye' ? { next: 'user', source: 'rule' } : nowPresent.length ? await pickNext({ parts, present: nowPresent, msgs: after, speaker: me.id, left, called: !!placed, signal: ac.signal, userId: user.id, limit: st.nudged ? config.duo.maxChain : Math.min(3, config.duo.maxChain) }) : { next: 'user', source: 'rule' };
+      send({ next: nx.next, chain: st.chain, source: nx.source, ...(b.nudge === 'goodbye' ? { close: true } : {}), ms: { first: firstAt ? firstAt - t0 : null, total: Date.now() - t0 } });
       req.log.info({ userId: user.id, speaker: me.id, director: pick.source, next: nx.next, chain: st.chain, turn: st.turns, left, call: placed?.target ?? null, firstMs: firstAt ? firstAt - t0 : null, ms: Date.now() - t0 }, 'duo turn');
       if (!out.writableEnded) { out.write('data: [DONE]\n\n'); out.end(); }
     })();
@@ -563,11 +663,20 @@ export async function duoRoutes(app: FastifyInstance) {
     if (m && ['warm', 'happy', 'touched', 'amused'].includes(m.label) && !caller) { pAns += 0.12 * m.intensity; why.push(`${m.label} toward the user`); }
     if (rel.hungUpRecently && !caller) { pAns -= 0.2; why.push('had hung up on the user not long before'); }
     if (attempt > 1) { pAns += 0.2 * (attempt - 1); why.push(`they kept calling (try ${attempt})`); }
+    // it left this very call earlier: how and why it left weigh on picking up again
+    const lf = st.left[callee.id];
+    if (lf) {
+      const mins = Math.max(1, Math.round((Date.now() - lf.at) / 60_000));
+      const fromOther = lf.because === 'other' && on.length > 0;
+      pAns -= lf.how === 'storm_out' ? (fromOther ? 0.45 : lf.because === 'user' && !caller ? 0.4 : 0.3) : 0.12;
+      why.push(lf.how === 'storm_out' ? `had stormed out of this call ${mins} min before${lf.because === 'other' ? ' because of someone still on it' : lf.because === 'user' ? ' because of the user' : ''}` : `had slipped out of this call quietly ${mins} min before`);
+    }
     pAns = Math.min(0.95, Math.max(0.05, pAns));
     const roll = Math.random();
     const dev = !config.isProd && config.devFakeLogin;
     const decision: 'answer' | 'decline' | 'ignore' = dev && b.force ? b.force
-      : roll < pAns ? 'answer' : (m && ['angry', 'furious', 'cold'].includes(m.label)) || enemyCalls || Math.random() < 0.5 ? 'decline' : 'ignore';
+      : roll < pAns ? 'answer' : (m && ['angry', 'furious', 'cold'].includes(m.label)) || enemyCalls || lf?.how === 'storm_out' || Math.random() < 0.5 ? 'decline' : 'ignore';
+    if (decision === 'answer') st.rings[callee.id] = 0;   // a later call-back starts counting again
     const eager = pAns > 0.7 && !enemyOn;
     const rings = decision === 'ignore' ? 4 : decision === 'decline' ? 1 + Math.floor(Math.random() * 2) : eager ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 2);
 
@@ -587,7 +696,9 @@ export async function duoRoutes(app: FastifyInstance) {
     if (reactor) {
       try { chargeLlm(user); } catch (e) { refundCall(); st.rings[callee.id] = attempt - 1; throw e; }
       const metIds = new Set(connectedTo(user.id, reactor.id));
-      const rel2 = isEnemy(reactor.id, callee.id) ? `${callee.name} is your ex and old enemy (you know the whole history, see above)`
+      const wasHere = st.left[callee.id];
+      const rel2 = wasHere ? `${callee.name} was on this very call until a few minutes ago and ${wasHere.how === 'storm_out' ? 'stormed out' : 'slipped out quietly'}${wasHere.reason ? ` (${wasHere.reason})` : ''}${isEnemy(reactor.id, callee.id) ? '; also your ex and old enemy' : ''}`
+        : isEnemy(reactor.id, callee.id) ? `${callee.name} is your ex and old enemy (you know the whole history, see above)`
         : reactor.kind === 'builtin' && callee.kind === 'builtin' ? `you know ${callee.name} (see above)`
           : metIds.has(callee.id) ? `you met ${callee.name} once before, on an earlier call with the user`
             : `you have never met ${callee.name}; all you know: ${callee.bio || 'nothing much'}. React like you would to a stranger being added to a call, outside your own old conflicts`;

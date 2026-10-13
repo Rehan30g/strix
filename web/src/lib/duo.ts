@@ -12,7 +12,7 @@ export interface DuoMsg {
 export interface Participant { id: string; kind: 'builtin' | 'custom'; language?: string; persona?: { name: string; description: string; accent: string; language: string; voiceId: string } }
 export interface Callable { id: string; name: string; description: string }
 export interface CallEvent { target: string; name: string; reason: string; caller?: string }
-export interface EndEvent { decision: 'hangup'; reason?: string; speaker?: string }
+export interface EndEvent { decision: 'hangup'; reason?: string; speaker?: string; how?: 'storm_out' | 'quiet'; because?: 'user' | 'other' | 'self' }
 
 export function participant(p: Persona): Participant {
   if (p.builtin) return { id: p.id, kind: 'builtin', ...(p.lang === AUTO ? {} : { language: langName(p.lang) }) };

@@ -1,7 +1,7 @@
 /* Cross-conversation memory of chat personas (server: /api/memory, see server/CONTRACT-NOTES.md "Memory").
    Plain fetch on purpose: memory is a background nicety, a failure must stay silent (no global toasts / quota events). */
 
-export type CommitReason = 'hangup' | 'restart' | 'switch' | 'idle' | 'duo';
+export type CommitReason = 'hangup' | 'quit' | 'restart' | 'switch' | 'idle' | 'duo';
 export interface MemoryMood { label: string; intensity: number; intensityNow: number; nowLabel?: string; reason: string; at: string | null }
 export interface MemoryEvent { id: number; text: string; at: string | null; from?: string; to?: string[]; fromName?: string; toNames?: string[]; kind?: 'solo' | 'duo' | 'missed' }
 export interface PersonaMemory {
@@ -39,7 +39,7 @@ export async function commitMemory(a: {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({
         personaId: a.personaId, personaName: a.personaName.slice(0, 40), reason: a.reason, messages,
-        ...(a.reason === 'hangup' ? { hangup: { reason: (a.hangupReason || '').slice(0, 300) } } : {}),
+        ...(a.reason === 'hangup' || a.reason === 'quit' ? { hangup: { reason: (a.hangupReason || '').slice(0, 300) } } : {}),
         ...(a.duo ? { duo: { with: a.duo.with.slice(0, 4).map((w) => ({ id: w.id, name: w.name.slice(0, 40) })) } } : {}),
       }),
     });

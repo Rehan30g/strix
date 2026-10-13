@@ -205,19 +205,35 @@ function compactEvents(userId: number) {
 }
 
 /** /api/chat saw end_call: remember at once that the persona hung up (even if the summary later fails). */
-export function noteHangup(userId: number, pid: string, reason: string) {
+/** /api/chat or a group call saw end_call: remember at once that the persona hung up / left (even if the summary later fails).
+    Group calls (server/duo.ts) pass `duo`: how it left (storm_out -> 'hangup', quiet -> 'quit'), whose doing it was (the anger
+    is only aimed at the user when the user caused it), and who else was on the call: they get it as shared news (kind 'duo'). */
+export function noteHangup(userId: number, pid: string, reason: string,
+  duo?: { how: 'storm_out' | 'quiet'; because: 'user' | 'other' | 'self'; with: Array<{ id: string; name: string }>; name: string }) {
   const now = Date.now();
   const note = cleanSummary(reason, 300);
   const row = getRow(userId, pid);
   const prev = moodNow(parseMood(row?.mood_json));
+  const quiet = duo?.how === 'quiet';
+  const atUser = !duo || duo.because === 'user';
   const angryEnough = prev && ['angry', 'furious', 'cold', 'hurt'].includes(prev.label) && prev.intensityNow >= 0.7;
-  const mood: Mood = angryEnough ? { label: prev.label, intensity: prev.intensityNow, reason: prev.reason, at: now } : { label: 'angry', intensity: 0.8, reason: note || 'had enough of the user and hung up', at: now };
-  run(`INSERT INTO persona_memory (user_id, persona_id, mood_json, last_end_at, last_end_reason, last_end_note, updated_at) VALUES (?, ?, ?, ?, 'hangup', ?, ?)
-    ON CONFLICT(user_id, persona_id) DO UPDATE SET mood_json = excluded.mood_json, last_end_at = excluded.last_end_at,
-    last_end_reason = 'hangup', last_end_note = excluded.last_end_note, updated_at = excluded.updated_at`,
-  userId, pid, JSON.stringify(mood), now, note || null, now);
+  // quiet exit / not the user's fault: the mood toward the user is not set to anger (keep what it was, or a mild "wary")
+  const mood: Mood | null = quiet || !atUser
+    ? (prev && prev.label !== 'calm' ? null : { label: quiet ? 'calm' : 'wary', intensity: quiet ? 0.2 : 0.35, reason: note || 'left the group call', at: now })
+    : angryEnough ? { label: prev.label, intensity: prev.intensityNow, reason: prev.reason, at: now } : { label: 'angry', intensity: 0.8, reason: note || 'had enough of the user and hung up', at: now };
+  const kind = quiet ? 'quit' : 'hangup';
+  run(`INSERT INTO persona_memory (user_id, persona_id, mood_json, last_end_at, last_end_reason, last_end_note, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id, persona_id) DO UPDATE SET mood_json = COALESCE(excluded.mood_json, mood_json), last_end_at = excluded.last_end_at,
+    last_end_reason = excluded.last_end_reason, last_end_note = excluded.last_end_note, updated_at = excluded.updated_at`,
+  userId, pid, mood ? JSON.stringify(mood) : null, now, kind, note || null, now);
+  if (duo?.with.length) {
+    const who = clean(duo.name, 40) || 'Someone';
+    const text = cleanSummary(`${who} ${quiet ? 'quietly left' : 'stormed out of'} a group call with the user and ${duo.with.map((w) => clean(w.name, 40)).join(' and ')}${note ? ` (${note.replace(/\.$/, '')})` : ''}.`, 240);
+    run('INSERT INTO shared_events (user_id, source_persona_id, persona_ids_json, summary, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)',
+      userId, pid, JSON.stringify(duo.with.map((w) => w.id)), text, now, 'duo');
+    compactEvents(userId);
+  }
 }
-
 /** How `pid` feels about the user right now (decayed mood) and whether it hung up on them recently (duo ring decisions). */
 export function relationNow(userId: number, pid: string, now = Date.now()) {
   const row = getRow(userId, pid);
@@ -291,8 +307,10 @@ export function memoryContext(userId: number, pid: string, personaName: string, 
   const since = row?.last_end_at ? now - row.last_end_at : null;
   if (row?.last_end_at) {
     const how = row.last_end_reason === 'hangup'
-      ? `it ended because YOU hung up on them${row.last_end_note ? ` (${row.last_end_note.replace(/\.$/, '')})` : ''}`
-      : 'it ended normally';
+      ? `it ended because YOU hung up on them / walked out${row.last_end_note ? ` (${row.last_end_note.replace(/\.$/, '')})` : ''}`
+      : row.last_end_reason === 'quit'
+        ? `you quietly left a group call with them${row.last_end_note ? ` (${row.last_end_note.replace(/\.$/, '')})` : ''}, no big scene`
+        : 'it ended normally';
     lines.push(`Last time you talked: ${ago(since!)}; ${how}.`);
   }
   const m = moodNow(parseMood(row?.mood_json), now);
@@ -364,7 +382,7 @@ const commitBody = z.object({
   personaId: z.string().max(64),
   personaName: z.string().max(200).optional().nullable(),
   messages: z.array(msgSchema).max(400),
-  reason: z.enum(['hangup', 'restart', 'switch', 'idle', 'duo']),
+  reason: z.enum(['hangup', 'quit', 'restart', 'switch', 'idle', 'duo']),
   hangup: z.object({ reason: z.string().max(600).optional().nullable() }).optional().nullable(),
   // group call (server/duo.ts): who else was on it; assistant messages then carry `speaker` (persona id)
   duo: z.object({
@@ -483,13 +501,13 @@ export async function memoryRoutes(app: FastifyInstance) {
     const minUser = isDuo ? 1 : 2;   // on a group call the personas also talk to each other: one user turn can be enough
     const now = Date.now();
     const row = getRow(user.id, pid);
-    const hangNote = b.reason === 'hangup' ? cleanSummary(b.hangup?.reason ?? row?.last_end_note ?? '', 300) : '';
+    const hangNote = b.reason === 'hangup' || b.reason === 'quit' ? cleanSummary(b.hangup?.reason ?? row?.last_end_note ?? '', 300) : '';
     // how the conversation ended is always recorded when there is something to remember (no LLM needed)
     const touchEnd = () => {
-      if (!row && userTurns < minUser && b.reason !== 'hangup') return false;
+      if (!row && userTurns < minUser && b.reason !== 'hangup' && b.reason !== 'quit') return false;
       run(`INSERT INTO persona_memory (user_id, persona_id, last_end_at, last_end_reason, last_end_note, updated_at) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, persona_id) DO UPDATE SET last_end_at = excluded.last_end_at, last_end_reason = excluded.last_end_reason,
-        last_end_note = CASE WHEN excluded.last_end_reason = 'hangup' THEN COALESCE(excluded.last_end_note, last_end_note) ELSE NULL END,
+        last_end_note = CASE WHEN excluded.last_end_reason IN ('hangup', 'quit') THEN COALESCE(excluded.last_end_note, last_end_note) ELSE NULL END,
         updated_at = excluded.updated_at`, user.id, pid, now, b.reason, hangNote || null, now);
       return true;
     };
@@ -501,7 +519,7 @@ export async function memoryRoutes(app: FastifyInstance) {
     const input = {
       character: name,
       ...(duoWith.length ? { call: `group voice call: the user, ${name}, ${duoWith.map((w) => w.name).join(', ')}` } : {}),
-      endedBy: b.reason === 'hangup' ? `${name} ${isDuo ? 'left the group call' : 'hung up on the user'}${hangNote ? `: ${hangNote}` : ''}` : b.reason === 'idle' ? 'the conversation went quiet' : 'the user ended or left the conversation',
+      endedBy: b.reason === 'quit' ? `${name} quietly left the group call${hangNote ? `: ${hangNote}` : ''}` : b.reason === 'hangup' ? `${name} ${isDuo ? 'left the group call' : 'hung up on the user'}${hangNote ? `: ${hangNote}` : ''}` : b.reason === 'idle' ? 'the conversation went quiet' : 'the user ended or left the conversation',
       previous: {
         summary: row?.summary ?? '',
         facts: parseArr(row?.facts_json),
@@ -539,7 +557,7 @@ export async function memoryRoutes(app: FastifyInstance) {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, persona_id) DO UPDATE SET summary = excluded.summary, facts_json = excluded.facts_json,
         mood_json = COALESCE(excluded.mood_json, mood_json), last_end_at = excluded.last_end_at, last_end_reason = excluded.last_end_reason,
-        last_end_note = CASE WHEN excluded.last_end_reason = 'hangup' THEN COALESCE(excluded.last_end_note, last_end_note) ELSE NULL END,
+        last_end_note = CASE WHEN excluded.last_end_reason IN ('hangup', 'quit') THEN COALESCE(excluded.last_end_note, last_end_note) ELSE NULL END,
         lang = excluded.lang, turns = turns + excluded.turns, updated_at = excluded.updated_at`,
       user.id, pid, summary, JSON.stringify(facts), mood ? JSON.stringify(mood) : null, now, b.reason, hangNote || null, lang, userTurns, now);
       for (const e of share) {
