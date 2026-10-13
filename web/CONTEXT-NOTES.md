@@ -157,6 +157,19 @@ Scope follows `../SPEC-LITE.md`: 4 tabs (Chat Persona, TTS, Voice Changer, Voice
   `tools:{web:false}`; hidden when `/me features.webSearch === false`. Account sheet shows quota `search`.
 - Test hooks: `window.__duplex()` (state, trace, decisions, gain, cuts, sends, echo).
 
+## Persona memory (server contract: ../server/CONTRACT-NOTES.md "Memory")
+- `src/lib/memory.ts`: `commitMemory()` (plain fetch, never throws, `keepalive` for page hide), `getMemory / forgetMemory /
+  forgetShared`, Indonesian wording (`moodText`, `agoText`). `streamChat` sends `memoryId: persona.id` on every call (the intro
+  tour passes `memory:false`) and supports `opener:true` (-> `{noMemory}` = static greeting).
+- Chat (`screens/chat/index.ts`): `ChatLog.mem` = messages already committed; `commitNow(reason)` sends only the rest (>= 2 user
+  turns, or a hang-up). Triggers: hang-up verdict (at once), "Mulai percakapan baru" / "Mulai ulang" (commit, wait <= 9 s, then the
+  persona opens with `opener`), persona switch and leaving the screen, 5 min idle, `pagehide`. An empty log opens with the opener
+  (no user gesture yet: fetched silently and shown as a caption). "Mulai percakapan baru" no longer forgets anything: it only
+  closes the local log. After a hang-up the end bar shows "X masih ingat percakapan tadi. Lihat".
+- Sheet "Ingatan" (menu ⋮ and the persona row menu): last call + how it ended, mood now, summary, facts, news heard / passed on,
+  privacy line, "Lupakan semuanya" (confirm) and "Lupakan kabar bersama". Deleting a custom persona also deletes its memory.
+  Test hook `window.__memory()` (commit log, pending commits, `mem`).
+
 ## Dev
 ```
 cd v2 && PORT=3300 npx tsx --env-file=.env server/index.ts              # API (DEV_FAKE_LOGIN=1 in .env)

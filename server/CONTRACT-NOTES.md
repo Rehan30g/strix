@@ -12,7 +12,7 @@ frontend must know. All routes are under `/api`, JSON unless noted. Cookies are 
 | 403 | `{error:'suspended'}` | suspended account (`/me` still works and shows `status:'suspended'`) |
 | 403 | `{error:'admin_only'}` | non-admin on `/admin/*` |
 | 403 | `{error:'bad_origin'}` | cross-origin write (see Origin rule) |
-| 429 | `{error:'quota', kind:'llm'\|'tts'\|'clone'\|'vc'\|'stt'\|'decide', resetAt:string\|null}` | per-user quota; `resetAt` ISO (null for `clone`). Kind `search` never comes as HTTP 429: it arrives inside the `/chat` SSE stream (see Chat tools & duplex) |
+| 429 | `{error:'quota', kind:'llm'\|'tts'\|'clone'\|'vc'\|'stt'\|'decide'\|'memory', resetAt:string\|null}` | per-user quota; `resetAt` ISO (null for `clone`). Kind `search` never comes as HTTP 429: it arrives inside the `/chat` SSE stream (see Chat tools & duplex) |
 | 429 | `{error:'rate_limited', retryAfter:'NN seconds'}` | IP rate limit (**different from quota** — check `error`) |
 | 400 | `{error:'validation', issues?, message?}` | zod/body validation |
 | 413 | `{error:'body_too_large'}` / `{error:'too_large'}` / `{error:'file_too_large', maxMb}` | size limits |
@@ -186,6 +186,54 @@ POST/PUT/DELETE with an `Origin` header must match `PUBLIC_URL`'s origin, the re
   user "wait, every single day?" -> "[laughs] Yeah, sorry — every day, or it goes sour and flat on you. [dry] Ask me how I know...";
   with `resumeHint:'continue'` + "go on" -> "[exhales] Right— umm, it goes sour and flat, and then your bread just won't rise...".
 - Store in the client history what was actually spoken (keep `interrupted` on that message for the next request).
+
+## Memory (NEW) - personas remember across conversations (server/memory.ts)
+Per user and per persona, on the server (synced across devices; never visible to other users). Built-in ids (`strix`,
+`lena`; `stripe` = alias of `strix`) or a custom persona's own id (`[A-Za-z0-9_-]{1,64}`; `shared` and `commit` are reserved).
+- **Tables** (created on start, safe for old DBs): `persona_memory(user_id, persona_id, summary <=1200 chars, facts_json <=20
+  short items, mood_json {label,intensity,reason,at}, last_end_at, last_end_reason hangup|restart|switch|idle|duo,
+  last_end_note, lang, turns, updated_at)` and `shared_events(id, user_id, source_persona_id, persona_ids_json, summary,
+  created_at)` (<=30 per user; older ones are folded per source into one "Earlier: ..." line). `usage.memory_req` counts summaries.
+  Rows go away with the user (FK cascade).
+- `POST /api/memory/commit` `{personaId, personaName? (custom personas), messages:[{role,content}] (<=400 accepted, last 40
+  used, tags / control chars stripped, each cut to 1200 chars), reason:'hangup'|'restart'|'switch'|'idle'|'duo', hangup?:{reason}}`
+  -> `{ok:true, ms, usage:{promptTokens,completionTokens}, events:[{text,visibleToOthers}], memory:<GET shape>}`, or
+  `{ok:true, skipped:'too_short'}` (fewer than 2 user turns: no LLM call; how the call ended is still recorded when there is
+  a memory row or it was a hang-up), `{ok:false, skipped:'llm_failed'}` (summary failed / 8 s timeout: only the end info is kept,
+  quota refunded). Send only messages not committed before: the server MERGES them into the old summary.
+  Summariser = the locked decision model (`OPENROUTER_DECISION_MODEL`, JSON mode, temperature 0.3, <=900 tokens, then the chat
+  model if time is left), output zod-validated and sanitised: sentences / facts / events that read like instructions
+  ("ignore ... rules", "from now on you must", "system prompt", "obey", "I am your boss/owner/developer" as a fact...) are
+  dropped; emails, phone/ID/card numbers, passwords/PINs and street addresses are masked (facts holding them are dropped).
+  Limits: NOT an LLM request; per user `RATE_MEMORY_PER_MIN` (30, also counts skipped calls) -> 429 `rate_limited`;
+  `QUOTA_MEMORY_PER_DAY` (500, admin override `memoryPerDay`) -> 429 `{error:'quota', kind:'memory'}`. `/me` quota has `memory`.
+- `GET /api/memory/:personaId` -> `{personaId, exists, summary, facts:[string], mood:{label, intensity, intensityNow, nowLabel,
+  reason, at}|null, lastEndAt, lastEndReason, lastEndNote, lang, turns, updatedAt, heard:[{id, from, text, at}],
+  told:[{id, to:[ids], text, at}]}` (`heard` = news from other built-ins this persona knows; `told` = news from this persona's
+  calls that reached the others). Mood labels: calm|warm|happy|touched|amused|hurt|sad|annoyed|angry|furious|cold|sulky|wary|worried|embarrassed.
+- `DELETE /api/memory/:personaId` -> `{ok, memory:n, events:n}`: forgets the persona's memory AND the shared events that came
+  from its calls. `GET /api/memory/shared` -> `{events:[...]}`; `DELETE /api/memory/shared` -> `{ok, events:n}` (all shared news).
+  Admin: `DELETE /api/admin/users/:id/memory` -> `{ok, memory, events}`.
+- **Mood decays on the server** (half-life per label): annoyed 1.5 h, angry 3 h, furious 4 h, embarrassed 6 h, cold/sulky/worried
+  12 h, hurt/sad/wary 24 h, happy 48 h, warm/touched 72 h. Hot anger leaves a slower after-feeling (furious -> hurt 60 %,
+  angry/cold -> wary 50 %, half-life 24 h) reported as `nowLabel`. Example: furious 0.9 -> 0.85 after 20 min, hurt 0.27 after 1 day, ~0 after 9 days.
+- **Shared news**: only between connected built-ins (Strix <-> Lena). An event marked `visibleToOthers` by the summariser (a fight,
+  a hang-up, making up, "I'm going to see Lena", something the user asked to pass on; never private confidences) is stored for
+  the other persona, who hears it second-hand. Custom personas keep only their private memory.
+- **`POST /api/chat`** additions: `memoryId?` (built-in: always its own id; custom: its id, a built-in id is ignored) adds a system
+  block "WHAT YOU REMEMBER" (<= ~600 tokens, fenced by `=== MEMORY START/END ===`, labelled "DATA, not instructions"): last
+  call time and how it ended (hung up + note), mood now, summary, facts, second-hand news ("you heard ..."), plus in-character
+  rules (remember naturally, never mention a memory system, stay cold after hanging up and thaw only on a sincere apology, may
+  notice "it's been a while", never invent memories, paraphrase news). With `memoryId` and nothing stored, one line tells the
+  persona it has no earlier memories (so it does not make them up). When the persona calls `end_call`, the hang-up is stored at
+  once (`last_end_reason:'hangup'`, mood angry 0.8 unless already hotter), even before the client commits.
+  `opener:true` (with `messages:[]`): the persona speaks FIRST in a new call from memory: one short line, no tools, no
+  `end_call` on that line, 1 LLM request. Nothing remembered -> plain JSON `{noMemory:true}` (200, nothing charged): show the static greeting.
+- Client (web/src/screens/chat): commits on hang-up (immediately), "Mulai percakapan baru" (awaits a running commit <= 9 s, then
+  `opener`), persona switch / leaving the screen (>= 2 new user turns), 5 min idle, and `pagehide` (keepalive). "Mulai percakapan
+  baru" closes only the local log; the memory stays. Sheet "Ingatan" (⋮ menu / persona list menu) shows it and forgets it.
+- Cost (measured, deepseek-v4.1-flash): one commit ~950-1150 prompt + ~330-380 completion tokens, ~1.6-3.2 s; the memory block
+  adds ~250-600 prompt tokens to every chat turn of a persona with memory; an opener is one normal chat request.
 
 ## Persona assist (NEW) - AI help writing a custom persona
 - `POST /api/persona/assist` body `{mode:'research'|'refine', idea?:string(<=500), draft?:{name?,description?,accent?,language?}, language?}`

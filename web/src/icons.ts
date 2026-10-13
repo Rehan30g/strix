@@ -66,6 +66,8 @@ const P: Record<string, string> = {
   lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/>',
   ban: '<circle cx="12" cy="12" r="9.5"/><path d="M5.3 5.3l13.4 13.4"/>',
   clock: '<circle cx="12" cy="12" r="9.5"/><path d="M12 7v5l3 2"/>',
+  // persona memory: a speech bubble holding a small clock hand (remembered conversations)
+  memory: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4h0A2.5 2.5 0 0 1 4 13.5z"/><path d="M12 6.5v3.5l2.3 1.5"/>',
   history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/><path d="M3.5 4v4.5H8M12 8v4l3 2"/>',
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',

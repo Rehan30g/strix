@@ -4,6 +4,7 @@ import { api, type Character } from '../api';
 import { settings } from '../settings';
 import { personaOrb, type CustomOrb } from '../ui/orb';
 import { BRAND } from './brand';
+import { forgetMemory } from './memory';
 
 export interface CustomPersona {
   id: string;            // 'c_xxxxxxxx'
@@ -64,7 +65,8 @@ export interface ChatMsg {
   resumed?: boolean;
 }
 export interface Verdict { decision: 'passed' | 'rejected' | 'hangup'; reason?: string; feedback?: string }
-export interface ChatLog { msgs: ChatMsg[]; verdict?: Verdict | null }
+/** `mem` = how many of `msgs` were already sent to /api/memory/commit (the next commit sends only the rest). */
+export interface ChatLog { msgs: ChatMsg[]; verdict?: Verdict | null; mem?: number }
 
 export const LANGS: Array<[string, string, string, string]> = [
   // key, label (UI), English name (prompt), speech-recognition locale
@@ -149,6 +151,7 @@ export function deleteCustom(id: string): void {
   settings.set('chat.personas', customPersonas().filter((p) => p.id !== id));
   setOverride(id, null);
   settings.local.remove('chat.log.' + id);
+  void forgetMemory(id).catch(() => { /* offline: the orphaned memory stays until "Lupakan" / admin cleanup */ });
 }
 export const newId = () => 'c_' + Math.random().toString(36).slice(2, 10);
 
@@ -202,7 +205,10 @@ export function greetingFor(p: Persona): string {
 
 export const logKey = (id: string) => 'chat.log.' + id;
 export const loadLog = (id: string): ChatLog => settings.local.get<ChatLog>(logKey(id), { msgs: [] });
-export const saveLog = (id: string, log: ChatLog) => settings.local.set(logKey(id), { msgs: log.msgs.slice(-60), verdict: log.verdict || null });
+export function saveLog(id: string, log: ChatLog) {
+  const cut = Math.max(0, log.msgs.length - 60);   // only the last 60 are kept on the device; `mem` follows the cut
+  settings.local.set(logKey(id), { msgs: log.msgs.slice(cut), verdict: log.verdict || null, mem: Math.max(0, (log.mem || 0) - cut) });
+}
 
 const safeUrl = (u: unknown) => { try { const x = new URL(String(u)); return x.protocol === 'https:' || x.protocol === 'http:' ? x.href : ''; } catch { return ''; } };
 /** Validate a streamed tool event (untrusted JSON). */
@@ -224,12 +230,18 @@ export function parseTool(t: any): ToolEvent | null {
 export async function streamChat(a: {
   persona: Persona; messages: ChatMsg[]; speak: boolean; signal?: AbortSignal; onText: (delta: string, full: string) => void;
   onTool?: (t: ToolEvent) => void; resumeHint?: 'continue' | 'rephrase' | 'drop'; webSearch?: boolean;
-}): Promise<{ reply: string; verdict: Verdict | null }> {
+  /** the persona opens a new conversation itself from its memory (no messages); `noMemory` = use the static greeting */
+  opener?: boolean;
+  /** false = no cross-conversation memory (the intro tour's demo line) */
+  memory?: boolean;
+}): Promise<{ reply: string; verdict: Verdict | null; noMemory?: boolean }> {
   const p = a.persona;
-  const messages = a.messages.filter((m) => m.content.trim() || m.interrupted).map((m) => ({ role: m.role, content: m.content.trim() || '…', ...(m.interrupted ? { interrupted: m.interrupted } : {}) }));
-  let reply = '', verdict: Verdict | null = null, err: string | null = null;
+  const messages = a.opener ? [] : a.messages.filter((m) => m.content.trim() || m.interrupted).map((m) => ({ role: m.role, content: m.content.trim() || '…', ...(m.interrupted ? { interrupted: m.interrupted } : {}) }));
+  let reply = '', verdict: Verdict | null = null, err: string | null = null, noMemory = false;
   await api.sse('/chat', {
     ...(p.builtin ? { characterId: p.id } : { persona: { name: p.name, description: p.custom!.description, accent: cleanAccent(p.accent), language: langName(p.lang) } }),
+    ...(a.memory === false ? {} : { memoryId: p.id }),   // cross-conversation memory (built-in id or this custom persona's id)
+    ...(a.opener ? { opener: true } : {}),
     messages,
     audioTags: a.speak,
     ...(p.lang === AUTO ? {} : { language: langName(p.lang) }),
@@ -240,12 +252,14 @@ export async function streamChat(a: {
     signal: a.signal,
     onEvent: (j) => {
       if (!j || typeof j !== 'object') return;
+      if (j.noMemory === true) { noMemory = true; return; }
       if (j.error) { err = typeof j.error === 'string' ? j.error : j.error.message || 'Error'; return; }
       if (j.end) { verdict = j.end; return; }
       if (j.tool) { const t = parseTool(j.tool); if (t) a.onTool?.(t); return; }
       if (typeof j.t === 'string' && j.t) { reply += j.t; a.onText(j.t, reply); }
     },
   });
+  if (noMemory) return { reply: '', verdict: null, noMemory };
   if (err && !reply) throw new Error(err);
   if (!reply && !verdict) throw new Error('Balasan kosong dari model. Coba kirim lagi.');
   return { reply, verdict };

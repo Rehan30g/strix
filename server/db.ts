@@ -125,6 +125,33 @@ CREATE TABLE IF NOT EXISTS user_settings (
   updated_at INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (user_id, key)
 );
+-- cross-conversation memory of a chat persona, per user (server/memory.ts). persona_id = built-in id or the client's
+-- custom persona id. summary <= 1200 chars, facts_json <= 20 short strings, mood_json {label,intensity,reason,at}
+CREATE TABLE IF NOT EXISTS persona_memory (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  persona_id TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  facts_json TEXT NOT NULL DEFAULT '[]',
+  mood_json TEXT,
+  last_end_at INTEGER,
+  last_end_reason TEXT,               -- hangup | restart | switch | idle | duo
+  last_end_note TEXT,                 -- end_call reason (neutral sentence) when the persona hung up
+  lang TEXT,                          -- language the user spoke last time (for the opener)
+  turns INTEGER NOT NULL DEFAULT 0,   -- user turns summarised so far
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, persona_id)
+);
+-- "news that spreads": events from a call with one built-in persona that the connected built-ins (Strix <-> Lena) know
+-- about. <= 30 per user (older ones are folded into one compacted line).
+CREATE TABLE IF NOT EXISTS shared_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_persona_id TEXT NOT NULL,    -- the persona the event happened with
+  persona_ids_json TEXT NOT NULL,     -- personas who heard about it
+  summary TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS shared_events_user ON shared_events(user_id, created_at);
 `;
 
 fs.mkdirSync(path.dirname(config.dbFile), { recursive: true });
@@ -141,6 +168,7 @@ addColumnIfMissing('usage', 'vc_sec', 'INTEGER NOT NULL DEFAULT 0'); // Voice Ch
 addColumnIfMissing('usage', 'stt_sec', 'INTEGER NOT NULL DEFAULT 0'); // speech-to-text (Scribe Realtime) seconds
 addColumnIfMissing('usage', 'search_req', 'INTEGER NOT NULL DEFAULT 0'); // chat web_search tool executions
 addColumnIfMissing('usage', 'decide_req', 'INTEGER NOT NULL DEFAULT 0'); // /api/chat/decide calls
+addColumnIfMissing('usage', 'memory_req', 'INTEGER NOT NULL DEFAULT 0'); // /api/memory/commit summaries (LLM calls)
 addColumnIfMissing('tts_history', 'kind', "TEXT NOT NULL DEFAULT 'tts'"); // 'tts' | 'dialogue' (multi-speaker)
 addColumnIfMissing('tts_history', 'meta_json', 'TEXT'); // dialogue: {cast:[{name,voiceId}], lines, pauseMs, durationSec}
 

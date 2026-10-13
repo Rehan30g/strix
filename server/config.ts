@@ -103,6 +103,8 @@ export const config = {
     searchPerDay: int(env.QUOTA_SEARCH_PER_DAY, 50), // chat web_search tool executions per day
     decidePerDay: int(env.QUOTA_DECIDE_PER_DAY, 3000), // /api/chat/decide calls per day (not counted as LLM requests)
     decidePerMin: int(env.RATE_DECIDE_PER_MIN, 120) || 120, // /api/chat/decide calls per minute per user
+    memoryPerDay: int(env.QUOTA_MEMORY_PER_DAY, 500), // /api/memory/commit summaries per day (not counted as LLM requests)
+    memoryPerMin: int(env.RATE_MEMORY_PER_MIN, 30) || 30, // /api/memory/commit calls per minute per user
   },
   rate: {
     globalPerMin: int(env.RATE_GLOBAL_PER_MIN, 120),

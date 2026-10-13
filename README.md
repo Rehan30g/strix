@@ -2,7 +2,7 @@
 
 A voice-first web app for talking to AI personas, built around ElevenLabs voices. Four things, kept deliberately small:
 
-- **Chat**: voice-only conversation with a persona. The orb sits at the bottom of the screen and the caption above it appears word by word *as it is spoken*. Supports a spoken "let me look that up" web-search tool, and a duplex mode (Scribe Realtime + a small decision model) where you can interrupt, back-channel ("mm-hm") or say "go on" and the persona knows exactly where it was cut off.
+- **Chat**: voice-only conversation with a persona. The orb sits at the bottom of the screen and the caption above it appears word by word *as it is spoken*. Supports a spoken "let me look that up" web-search tool, and a duplex mode (Scribe Realtime + a small decision model) where you can interrupt, back-channel ("mm-hm") or say "go on" and the persona knows exactly where it was cut off. Personas **remember** across conversations and devices: after each call a small model writes a short summary, facts and the persona's mood (which fades with time) on the server, so a persona that hung up on you is still cold when you call back; the two built-ins (Strix and Lena, exes) hear second-hand news about each other's calls. Users can view and erase it in the "Ingatan" sheet.
 - **Text to Speech**: `eleven_v4_turbo`, audio tags (`[whispers]`, `[laughs]`...) highlighted in purple, one-click **auto-tag** that only inserts tags and never rewrites your words, and a **multi-speaker dialogue** mode (`Name: line` per speaker, one voice each, one merged MP3).
 - **Voice Changer**: upload or record audio and convert it to another voice (speech-to-speech).
 - **Voices**: your collection, plus the full public ElevenLabs Voice Library (~19k voices, search and filters), and **voice cloning** from your own samples.
@@ -49,10 +49,10 @@ Production build: `npm run build && npm start` (serves the API and the built SPA
 All configuration is environment variables; see [`.env.example`](.env.example). The important ones:
 
 - `OPENROUTER_API_KEY`, `ELEVENLABS_API_KEY`: server side only, never sent to the browser. The ElevenLabs key needs `voices_read`, `text_to_speech`, `speech_to_text`, `speech_to_speech`, and `voices_write` (for cloning and adding library voices).
-- `OPENROUTER_MODEL` is the one chat model; `OPENROUTER_DECISION_MODEL` is a small fast model for interruption decisions. Clients cannot choose models.
+- `OPENROUTER_MODEL` is the one chat model; `OPENROUTER_DECISION_MODEL` is a small fast model for interruption decisions and persona memory summaries. Clients cannot choose models.
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL`, `ADMIN_EMAILS`: sign-in and admins.
 - `SHARED_VOICE_IDS`: voices every active user may use.
-- `QUOTA_*`, `MAX_*`: per-user daily quotas (LLM requests, TTS characters, Voice Changer seconds, STT seconds, searches, clones, collection size).
+- `QUOTA_*`, `MAX_*`: per-user daily quotas (LLM requests, TTS characters, Voice Changer seconds, STT seconds, searches, memory summaries, clones, collection size); `RATE_MEMORY_PER_MIN` caps memory commits per minute.
 
 ## Access model
 

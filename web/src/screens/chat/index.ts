@@ -32,7 +32,11 @@ import {
   fromCharacter, fromCustom, customPersonas, chatPrefs, setChatPrefs, setOverride, saveCustom, deleteCustom, setPersonaOrb,
   loadLog, saveLog, streamChat, visibleText, ttsText, greetingFor, langLabel, langName, sttLocale, LANGS, ACCENTS, cleanAccent, DEFAULT_VOICE, orbSpecFor, AUTO,
 } from '../../lib/persona';
+import { commitMemory, getMemory, forgetMemory, forgetShared, moodText, agoText, memoryLog, type CommitReason, type PersonaMemory } from '../../lib/memory';
 import './chat.css';
+
+/** No activity for this long = the conversation is idle: what was said goes to the persona's memory. */
+const IDLE_COMMIT_MS = 5 * 60_000;
 
 type UiState = DState | 'ptt';
 const desktop = () => matchMedia('(min-width: 900px)').matches;
@@ -100,7 +104,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   const micBars = h('span', { class: 'vx-bars', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
   const sendBtn = h('button', { type: 'submit', class: 'vx-send', 'aria-label': 'Kirim', html: S('arrowUp') });
   const form = h('form', { class: 'vx-bar' }, micBtn, input, sendBtn);
-  const restartBar = h('div', { class: 'vx-ended', hidden: true }, ui.btn({ label: 'Mulai percakapan baru', icon: 'refresh', cls: 'primary', onClick: () => restart() }));
+  const memNoteText = h('span', null);
+  const memNote = h('p', { class: 'vx-memnote', hidden: true }, h('span', { class: 'vx-memnote-ic', html: S('memory') }), memNoteText,
+    h('button', { type: 'button', class: 'vx-memnote-b', onclick: () => { if (cur) openMemorySheet(cur); } }, 'Lihat'));
+  const restartBar = h('div', { class: 'vx-ended', hidden: true }, memNote, ui.btn({ label: 'Mulai percakapan baru', icon: 'refresh', cls: 'primary', onClick: () => { void restart(); } }));
   const edge = h('div', { class: 'vx-edge', 'data-hswipe': '1', 'aria-hidden': 'true' });
   const wrap = h('div', { class: 'vx', 'data-state': 'idle' }, top, stage, orbWrap, h('div', { class: 'vx-bottom' }, form, restartBar), edge);
   root.append(wrap);
@@ -364,53 +371,179 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
 
   /* ================= conversation ================= */
   function open(id: string) {
+    const prevP = cur, prevLog = log;
     stopAll();
     const p = personas.find((x) => x.id === id) || null;
     const switched = !!cur && !!p && cur.id !== p.id;
     cur = p;
+    // leaving a persona: what was said since the last commit goes to its memory (background)
+    if (switched && prevP) void commitNow('switch', prevP, prevLog);
     caps.clear(); hideYou(0); retry = null;
     if (!p) return;
     ctx.shell.setTitle(p.name);
     setChatPrefs({ last: p.id });
     log = loadLog(p.id);
+    lastActAt = Date.now(); idleTried = false;
     paintHead();
     // a persona picked in the list (or "Ngobrol" after creating one): its orb lands here
     void receiveOrb(theOrb);
     if (switched) enter(stage, { dy: 8, ms: 300 });
     if (log.verdict) showVerdict(log.verdict);
-    else if (!log.msgs.length) {
-      const g = greetingFor(p);
-      if (g) {
-        const m: ChatMsg = { role: 'assistant', content: g };
-        log.msgs.push(m); saveLog(p.id, log);
-        const active = (navigator as any).userActivation?.hasBeenActive;
-        if (active) speakText(p, g, m); else { caps.block('greet'); caps.show(g); }
-      }
-    } else {
+    else if (!log.msgs.length) void greet(p);
+    else {
       const last = [...log.msgs].reverse().find((m) => m.role === 'assistant');
       if (last) { caps.block('prev', 'prev'); caps.show(last.content); }
     }
     restartBar.hidden = !log.verdict; form.hidden = !!log.verdict;
     paintState(); kick();
   }
-  function restart() {
+  /** A new conversation: the persona opens it itself from what it remembers (/chat opener), or with its static
+      greeting when it remembers nothing (or the opener fails). */
+  async function greet(p: Persona) {
+    if ((navigator as any).userActivation?.hasBeenActive) { await reply(p, { opener: true }); return; }
+    // no user gesture yet, so no audio: fetch the opener silently and show it as a caption
+    const myGen = gen;
+    let text = '';
+    try { const res = await streamChat({ persona: p, messages: [], speak: true, opener: true, onText: () => { /* shown at once below */ } }); text = res.noMemory ? '' : res.reply; } catch { /* static greeting */ }
+    if (myGen !== gen || cur !== p || log.msgs.length || log.verdict) return;
+    const g = text.trim() || greetingFor(p);
+    if (!g) return;
+    log.msgs.push({ role: 'assistant', content: g }); saveLog(p.id, log);
+    caps.block('greet'); caps.show(g);
+    paintState(); kick();
+  }
+  /** "Mulai percakapan baru": the persona KEEPS its memory; only the log on this device is closed. The conversation is
+      committed first (if it was not yet), then the persona opens the new call from memory. */
+  async function restart() {
     if (!cur) return;
+    const p = cur, old = log;
     stopAll();
-    settings.local.remove('chat.log.' + cur.id);
+    void commitNow(old.verdict?.decision === 'hangup' ? 'hangup' : 'restart', p, old);
+    const pend = pendingCommits.get(p.id);
+    settings.local.remove('chat.log.' + p.id);
     log = { msgs: [] };
     caps.clear();
-    const g = greetingFor(cur);
-    if (g) { const m: ChatMsg = { role: 'assistant', content: g }; log.msgs.push(m); saveLog(cur.id, log); speakText(cur, g, m); }
-    restartBar.hidden = true; form.hidden = false;
-    paintHead(); paintState(); kick();
+    restartBar.hidden = true; form.hidden = false; memNote.hidden = true;
+    paintHead();
+    const myGen = gen;
+    if (pend) {
+      // "picking up the phone" while the memory is being written (max ~9 s; a failure just means less to remember)
+      busy = true; D({ type: 'think' });
+      await Promise.race([pend, new Promise((r) => setTimeout(r, 9000))]);
+      if (myGen === gen) busy = false;
+    }
+    if (myGen !== gen || cur !== p || log.msgs.length) { kick(); paintState(); return; }
+    await reply(p, { opener: true });
   }
   function showVerdict(v: Verdict) {
     caps.block('verdict', 'verdict');
-    const head = v.decision === 'hangup' ? `${cur?.name || 'Persona'} menutup telepon.` : v.decision === 'passed' ? 'Lolos interview.' : 'Interview berakhir: ditolak.';
+    const name = cur?.name || 'Persona';
+    const head = v.decision === 'hangup' ? `${name} menutup telepon.` : v.decision === 'passed' ? 'Lolos interview.' : 'Interview berakhir: ditolak.';
     caps.show([head, v.reason || '', v.feedback || ''].filter(Boolean).join(' '));
+    memNoteText.textContent = `${name} masih ingat percakapan tadi.`;
+    memNote.hidden = false;
     restartBar.hidden = false; form.hidden = true;
     if (rec) { const r = rec; rec = null; r.abort(); }
     paintHead();
+  }
+
+  /* ================= memory across conversations (server: /api/memory) ================= */
+  const pendingCommits = new Map<string, Promise<boolean>>();
+  let lastActAt = Date.now(), idleTried = false;
+  /** Send the part of a conversation not yet remembered to /api/memory/commit, in the background (never blocks the chat,
+      a failure is silent). Skipped with fewer than 2 user turns, except a hang-up (how the call ended is remembered). */
+  function commitNow(reason: CommitReason, p: Persona | null = cur, l: ChatLog = log, keepalive = false): Promise<boolean> {
+    if (!p) return Promise.resolve(false);
+    const from = Math.min(l.mem || 0, l.msgs.length);
+    const fresh = l.msgs.slice(from);
+    const users = fresh.filter((m) => m.role === 'user').length;
+    const hung = l.verdict?.decision === 'hangup';
+    if (users < 2 && !(hung && users > 0)) return pendingCommits.get(p.id) || Promise.resolve(false);
+    l.mem = l.msgs.length;
+    saveLog(p.id, l);
+    const send = () => commitMemory({
+      personaId: p.id, personaName: p.name, reason: hung ? 'hangup' : reason, hangupReason: hung ? l.verdict?.reason : undefined,
+      messages: fresh.map((m) => ({ role: m.role, content: m.content })), keepalive,
+    });
+    // one commit per persona at a time (keepalive on page hide cannot wait for the previous one)
+    const job = keepalive ? send() : (pendingCommits.get(p.id) || Promise.resolve(false)).then(send, send);
+    pendingCommits.set(p.id, job);
+    void job.then((ok) => {
+      if (pendingCommits.get(p.id) === job) pendingCommits.delete(p.id);
+      // failed: the same messages may be tried again later (idle / switch), as long as this log is still the open one
+      if (!ok && log === l && l.mem === l.msgs.length) { l.mem = from; saveLog(p.id, l); }
+    });
+    return job;
+  }
+  const idleT = setInterval(() => {
+    if (!cur || busy || idleTried || dm.state !== 'idle' && dm.state !== 'listening' || Date.now() - lastActAt < IDLE_COMMIT_MS) return;
+    idleTried = true;
+    void commitNow('idle');
+  }, 30_000);
+  const onPageHide = () => { if (cur) void commitNow('idle', cur, log, true); };
+  addEventListener('pagehide', onPageHide);
+  (window as any).__memory = () => ({ log: memoryLog.slice(-20), pending: [...pendingCommits.keys()], mem: log.mem || 0, msgs: log.msgs.length, lastActAt, idleTried });
+
+  /** Sheet "Ingatan": what the persona remembers, in plain words; forget everything / forget the shared news. */
+  function openMemorySheet(p: Persona) {
+    const body = h('div', { class: 'mem', 'aria-busy': 'true' },
+      h('div', { class: 'skel', style: 'height:16px;width:55%' }), h('div', { class: 'skel', style: 'height:72px;margin-top:12px' }), h('div', { class: 'skel', style: 'height:44px;margin-top:12px' }));
+    const forgetBtn = ui.btn({ label: 'Lupakan semuanya', icon: 'trash', cls: 'danger-soft block' });
+    const sharedBtn = ui.btn({ label: 'Lupakan kabar bersama', icon: 'users', cls: 'ghost block' });
+    forgetBtn.disabled = true; sharedBtn.hidden = true;
+    const acts = h('div', { class: 'mem-actions' }, forgetBtn, sharedBtn);
+    const m = ui.modal({ title: `Ingatan · ${p.name}`, cls: 'mem-dlg', body: h('div', null, body, acts) });
+    const nameOf = (id?: string) => personas.find((x) => x.id === id)?.name || 'persona lain';
+    const section = (title: string, ...kids: Node[]) => h('section', { class: 'mem-sec' }, h('h3', null, title), ...kids);
+    const privacy = () => h('p', { class: 'mem-privacy', html: S('lock') },
+      h('span', null, `Garis besar percakapan (bukan transkrip) disimpan di server supaya ${p.name} tetap ingat di semua perangkatmu. Hanya kamu yang bisa melihatnya, dan bisa kamu hapus kapan saja.`));
+    const render = (mem: PersonaMemory) => {
+      body.removeAttribute('aria-busy');
+      const rows: Node[] = [];
+      if (!mem.exists && !mem.heard.length && !mem.told.length) {
+        rows.push(h('div', { class: 'mem-empty' }, h('span', { class: 'mem-empty-ic', html: S('memory') }),
+          h('p', null, h('b', null, `${p.name} belum mengingat apa pun tentangmu.`)),
+          h('p', null, 'Setelah kalian ngobrol (minimal dua kali giliranmu), garis besarnya diingat di sini, juga setelah telepon ditutup.')));
+      } else {
+        const meta: Node[] = [];
+        if (mem.lastEndAt) meta.push(h('p', null, h('span', { class: 'mem-k' }, 'Terakhir ngobrol'), `${agoText(mem.lastEndAt)}${mem.lastEndReason === 'hangup' ? ` · ${p.name} menutup telepon` : ''}`));
+        if (mem.mood) meta.push(h('p', null, h('span', { class: 'mem-k' }, 'Perasaannya padamu'), moodText(mem.mood)));
+        if (meta.length) rows.push(h('div', { class: 'mem-meta' }, ...meta));
+        if (mem.summary) rows.push(section('Yang ia ingat', h('p', { class: 'mem-sum' }, mem.summary)));
+        if (mem.facts.length) rows.push(section('Hal tentangmu', h('ul', { class: 'mem-list' }, ...mem.facts.map((f) => h('li', null, f)))));
+        if (mem.heard.length) rows.push(section('Kabar yang ia dengar', h('ul', { class: 'mem-list' }, ...mem.heard.map((e) => h('li', null, e.text, h('small', null, ` dari obrolanmu dengan ${nameOf(e.from)}, ${agoText(e.at)}`))))));
+        if (mem.told.length) {
+          const to = [...new Set(mem.told.flatMap((e) => e.to || []))].map(nameOf).join(' dan ') || 'persona lain';
+          rows.push(section(`Kabar yang sampai ke ${to}`, h('ul', { class: 'mem-list' }, ...mem.told.map((e) => h('li', null, e.text, h('small', null, ` ${agoText(e.at)}`))))));
+        }
+      }
+      rows.push(privacy());
+      body.replaceChildren(...rows);
+      forgetBtn.disabled = !mem.exists && !mem.told.length;
+      sharedBtn.hidden = !mem.heard.length && !mem.told.length;
+    };
+    const load = () => getMemory(p.id).then(render).catch((e) => {
+      body.removeAttribute('aria-busy');
+      body.replaceChildren(h('div', { class: 'notice bad', html: S('alert') }, h('span', null, `Ingatan tidak bisa dimuat: ${e.message || e}`)), privacy());
+    });
+    forgetBtn.onclick = async () => {
+      if (!(await ui.confirm({ title: `${p.name} lupakan semuanya?`, message: `${p.name} akan lupa semua percakapan denganmu, perasaannya padamu, dan kabar dari obrolan dengannya. Log di perangkat ini tidak ikut terhapus.`, confirm: 'Lupakan', danger: true }))) return;
+      forgetBtn.disabled = true;
+      try {
+        await forgetMemory(p.id);
+        const l = p.id === cur?.id ? log : loadLog(p.id);
+        l.mem = l.msgs.length; saveLog(p.id, l);   // what is on this device is not sent again
+        ui.toast(`${p.name} sudah lupa. Mulai dari awal lagi.`, { kind: 'ok' });
+        void load();
+      } catch (e: any) { forgetBtn.disabled = false; ui.toast(e.message || String(e), { kind: 'bad', title: 'Gagal melupakan' }); }
+    };
+    sharedBtn.onclick = async () => {
+      if (!(await ui.confirm({ title: 'Lupakan kabar bersama?', message: 'Semua kabar yang menyebar antar persona bawaan (misalnya apa yang Lena dengar dari obrolanmu dengan Strix) dihapus. Ingatan pribadi tiap persona tetap ada.', confirm: 'Lupakan kabar' }))) return;
+      sharedBtn.disabled = true;
+      try { await forgetShared(); ui.toast('Kabar bersama dilupakan.', { kind: 'ok' }); void load(); } catch (e: any) { ui.toast(e.message || String(e), { kind: 'bad' }); } finally { sharedBtn.disabled = false; }
+    };
+    void load();
+    return m;
   }
 
   /** The machine decided the user's turn is `text` (voice or typed). merge = join the user's last message (the reply to
@@ -419,6 +552,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     text = text.trim();
     const p = cur;
     if (!text || !p || log.verdict) { if (dm.state === 'thinking' && !busy) D({ type: 'quiet' }); return; }
+    lastActAt = Date.now(); idleTried = false;
     if (input.value.trim() === text) { input.value = ''; autosize(); }
     showYou(text, true);
     const lastMsg = log.msgs[log.msgs.length - 1];
@@ -450,8 +584,9 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     hideYou();
     void reply(cur, { resumeHint: 'continue', base: m });
   }
-  async function reply(p: Persona, o: { resumeHint?: ResumeHint; base?: ChatMsg } = {}) {
+  async function reply(p: Persona, o: { resumeHint?: ResumeHint; base?: ChatMsg; opener?: boolean } = {}) {
     const myGen = ++gen;
+    lastActAt = Date.now();
     retry = null;
     clearTools();
     busy = true; chatCtrl = new AbortController();
@@ -463,15 +598,15 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     let n = 0, at = 0;
     const live = () => myGen === gen && cur === p && !r.cut && !r.cancelled;
     const chunks = ctx.text.chunker((s) => { const start = at; at += s.length; if (live()) speakChunk(r, s, start, `${rid}:${n++}`, myGen); }, 160, 40);
-    let replyText = '', verdict: Verdict | null = null, err: any = null;
+    let replyText = '', verdict: Verdict | null = null, err: any = null, noMemory = false;
     try {
       const res = await streamChat({
-        persona: p, messages: log.msgs, speak: true, signal: chatCtrl.signal,
+        persona: p, messages: log.msgs, speak: true, signal: chatCtrl.signal, opener: o.opener,
         resumeHint: o.resumeHint, webSearch: chatPrefs().webSearch !== false,
         onText: (d, full) => { replyText = full; r.full = full; chunks.push(d); },
         onTool: (t) => { if (live()) onTool(r, t, () => chunks.flush(true)); },
       });
-      replyText = res.reply; verdict = res.verdict; r.full = replyText;
+      replyText = res.reply; verdict = res.verdict; r.full = replyText; noMemory = !!res.noMemory;
     } catch (e: any) { err = e; }
     if (live() && (!err || replyText)) chunks.flush();
     if (replyText && !r.cut && !r.cancelled) {
@@ -486,10 +621,22 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         log.msgs.push(m); r.msg = m;
       }
     }
-    if (verdict && !r.cancelled) log.verdict = verdict;
+    if (verdict && !r.cancelled) {
+      log.verdict = verdict;
+      // the call is over: remember it now (background), so a new call already knows what happened
+      void commitNow(verdict.decision === 'hangup' ? 'hangup' : 'restart', p, log);
+    }
     if (!r.cancelled) saveLog(p.id, log);
+    lastActAt = Date.now();
     if (myGen !== gen || cur !== p) return;              // interrupted / switched persona
     busy = false; chatCtrl = null;
+    // opener: nothing remembered (or it failed) -> the static greeting, as before
+    if (o.opener && !replyText && (noMemory || (err && err.code !== 'aborted'))) {
+      const g = log.msgs.length ? '' : greetingFor(p);
+      if (g) { const m: ChatMsg = { role: 'assistant', content: g }; log.msgs.push(m); saveLog(p.id, log); speakText(p, g, m); }
+      kick(); paintState();
+      return;
+    }
     if (err && err.code !== 'aborted' && !replyText) {
       ui.toast(err.message || String(err), { kind: 'bad', title: 'Balasan gagal' });
       retry = () => { if (!busy && cur === p) reply(p, o); };
@@ -884,7 +1031,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         };
         const more = h('button', { type: 'button', class: 'btn icon ghost ps-more', 'aria-label': `Aksi untuk ${p.name}`, 'aria-haspopup': 'menu', html: S('moreV') });
         more.onclick = (e) => { e.stopPropagation(); ui.popover(more, h('div', null, ...actions(p).map((a) => ui.menuItem(a.label, a.icon, () => runAct(a, rowOrb), a.cls || ''))), { align: 'end' }); };
-        const host = swipeRow(h('div', { class: 'ps-row' }, main, more), actions(p).map((a) => ({ ...a, run: () => runAct(a, rowOrb) })), S);
+        const host = swipeRow(h('div', { class: 'ps-row' }, main, more), actions(p).filter((a) => a.icon !== 'memory').map((a) => ({ ...a, run: () => runAct(a, rowOrb) })), S);
         host.setAttribute('role', 'listitem');
         rows.push(host);
       }
@@ -919,6 +1066,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const out: Array<{ label: string; icon: string; cls?: string; run: () => void }> = [
       p.builtin ? { label: 'Atur suara & bahasa', icon: 'sliders', run: () => tunePersona(p) } : { label: 'Edit', icon: 'edit', run: () => editPersona(p.custom!) },
       { label: 'Studio Bola', icon: 'palette', run: () => orbStudio(p) },
+      { label: 'Ingatan', icon: 'memory', run: () => { openMemorySheet(p); } },
     ];
     if (!p.builtin) out.push({ label: 'Hapus', icon: 'trash', cls: 'danger', run: () => removePersona(p) });
     return out;
@@ -943,7 +1091,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const m = ui.modal({ title: cur ? `Transkrip · ${cur.name}` : 'Transkrip', cls: 'tr-dlg', body: list, actions: [again] });
     again.onclick = async () => {
       m.close();
-      if (log.msgs.length > 1 && !(await ui.confirm({ title: 'Mulai ulang?', message: 'Riwayat percakapan dengan persona ini dihapus dari perangkat ini.', confirm: 'Mulai ulang' }))) return;
+      if (log.msgs.length > 1 && !(await ui.confirm({ title: 'Mulai ulang?', message: `Log percakapan di perangkat ini ditutup. ${cur?.name || 'Persona'} tetap ingat garis besarnya (lihat Ingatan).`, confirm: 'Mulai ulang' }))) return;
       restart();
     };
     requestAnimationFrame(() => { const b = m.root.querySelector('.dlg-b'); if (b) b.scrollTop = b.scrollHeight; });
@@ -971,7 +1119,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       ...actions(p).filter((a) => a.icon !== 'trash').map((a) => ui.menuItem(a.label === 'Edit' ? 'Edit persona' : a.label, a.icon, a.run)),
       ui.menuItem('Transkrip', 'history', openTranscript),
       ui.menuItem('Mulai ulang percakapan', 'refresh', async () => {
-        if (log.msgs.length > 1 && !(await ui.confirm({ title: 'Mulai ulang?', message: 'Riwayat percakapan dengan persona ini dihapus dari perangkat ini.', confirm: 'Mulai ulang' }))) return;
+        if (log.msgs.length > 1 && !(await ui.confirm({ title: 'Mulai ulang?', message: `Log percakapan di perangkat ini ditutup. ${cur?.name || 'Persona'} tetap ingat garis besarnya (lihat Ingatan).`, confirm: 'Mulai ulang' }))) return;
         restart();
       }),
       p.builtin ? null : h('div', { class: 'menu-sep' }),
@@ -981,7 +1129,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
 
   /* ================= editors ================= */
   async function removePersona(p: Persona) {
-    if (!(await ui.confirm({ title: `Hapus "${p.name}"?`, message: 'Persona dan riwayat percakapannya dihapus.', confirm: 'Hapus', danger: true }))) return;
+    if (!(await ui.confirm({ title: `Hapus "${p.name}"?`, message: 'Persona, riwayat percakapan, dan ingatannya dihapus.', confirm: 'Hapus', danger: true }))) return;
     deleteCustom(p.id); buildPersonas();   // if it was the open persona, buildPersonas() moves the chat to another one
     ui.toast('Persona dihapus.', { kind: 'ok' });
   }
@@ -1067,11 +1215,13 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
 
   return {
     cleanup: () => {
+      if (cur) void commitNow('switch', cur, log);   // leaving the Chat screen: remember what was said
       stopAll();
       clearInterval(silenceT); clearInterval(barT); if (intT) clearTimeout(intT); if (hushT) clearTimeout(hushT);
       document.removeEventListener('visibilitychange', onVis);
       document.removeEventListener('pointerdown', onGesture, true); document.removeEventListener('keydown', onGesture, true);
       if (raf) cancelAnimationFrame(raf); removeEventListener('keydown', onKey, true); if (youT) clearTimeout(youT);
+      clearInterval(idleT); removeEventListener('pagehide', onPageHide);
     },
     onRoute,
   };

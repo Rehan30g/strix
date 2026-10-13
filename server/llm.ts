@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { characters, baseRules, audioTagRules, noTagRules, isEnglish } from './characters.js';
 import { addTokens, chargeLlm, chargeSearch, limitsFor, QuotaError, resetAt } from './quota.js';
+import { builtin, memoryContext, memoryKey, noteHangup } from './memory.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -113,7 +114,9 @@ const toolDefs: Record<string, unknown> = {
 
 const END_CALL_RULES = `
 
-ENDING THE CALL: you have a tool end_call that hangs up on the user and locks the conversation until they start a new one. Use it ONLY when, in character, you have genuinely had enough: the user keeps pushing, insulting or provoking you after you already warned them or showed you were upset, or you have clearly decided you will not go on talking with them. Never for a single rude line, mild discomfort, or a topic you can simply refuse. First say your short final line in the same reply (angry, cold, tired or simply done, whatever fits your mood), then call end_call in that same turn with a one-sentence neutral reason for the user's screen. After you call it the user cannot reply.`;
+ENDING THE CALL: you have a tool end_call that hangs up on the user and locks the conversation until they start a new one. Use it ONLY when, in character, you have genuinely had enough: the user keeps pushing, insulting or provoking you after you already warned them or showed you were upset, or you have clearly decided you will not go on talking with them. Never for a single rude line, mild discomfort, or a topic you can simply refuse. First say your short final line in the same reply (angry, cold, tired or simply done, whatever fits your mood), then call end_call in that same turn with a one-sentence neutral reason for the user's screen. After you call it the user cannot reply.
+
+PROMISES: if you promised something in this conversation (for example "I will not hang up on you"), you keep it. A promise is not a shield for abuse, but breaking one needs a real reason and you say so out loud ("I said I would not hang up. You are making me regret that."), and only after the user has clearly broken the spirit of it. If the user asks you not to hang up and you agree, do NOT call end_call in that same reply or in the replies right after, whatever the mood.`;
 
 const webSearchTool = {
   type: 'function',
@@ -162,6 +165,31 @@ function interruptedNote(cut: { spoken: string; unspoken: string }, hint: 'conti
 /** A reply that ends by promising to look something up ("let me check", "bentar, aku cek dulu"). */
 // the persona announces it is ending the call (EN / ID); used only to complete a forgotten end_call tool call
 const HANGUP_RE = /\b(hang(?:ing)? up|i'?m (?:done|out of here|leaving)|we'?re (?:done|finished)|this (?:conversation |call )?is over|(?:goodbye|bye) for (?:good|now)|aku (?:tutup|sudah selesai|pergi)|kita selesai|sudah cukup)\b/i;
+
+// a negation / promise just before the match means the persona is NOT hanging up ("I promise I won't hang up")
+const NEGATED_RE = /\b(won'?t|will not|wouldn'?t|not (?:going|gonna)|never|don'?t|do not|didn'?t|can'?t|cannot|promise|swear|no longer|rather not|refuse|instead of|stay|staying|not now|if you)\b/i;
+/** Did the persona's reply announce that THEY are ending / leaving the call right now? Pattern first (cheap), then one tiny
+    confirmation from the decision model; any doubt or failure = do NOT hang up. */
+async function announcesHangup(text: string, lastUser: string, signal: AbortSignal): Promise<boolean> {
+  const tail = text.slice(-220);
+  const m = HANGUP_RE.exec(tail);
+  if (!m) return false;
+  if (NEGATED_RE.test(tail.slice(Math.max(0, m.index - 50), m.index + m[0].length))) return false;
+  try {
+    const r = await openrouter({
+      model: config.decisionModel, stream: false, temperature: 0, max_tokens: 20, reasoning: { enabled: false },
+      messages: [
+        { role: 'system', content: 'You judge one line of a spoken conversation. Reply ONLY with JSON {"ending":true} or {"ending":false}. ending is true ONLY if the speaker, in this very reply, announces that THEY are hanging up / leaving / ending the call or conversation RIGHT NOW. It is false for promises not to hang up, refusals to leave, conditions or threats ("if you keep going I will hang up"), questions, and talk about the past.' },
+        { role: 'user', content: `The other person last said: ${lastUser.slice(0, 300)}\nThe speaker's reply: ${tail}` },
+      ],
+    }, AbortSignal.any([signal, AbortSignal.timeout(2500)]), 'Strix hangup check');
+    if (!r.ok) return false;
+    const j: any = await r.json();
+    const raw = String(j?.choices?.[0]?.message?.content ?? '');
+    const o = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+    return o.ending === true;
+  } catch { return false; }
+}
 
 const PROMISE_RE =/\b(let me|lemme|i'?ll|i will|gonna|going to)\s+(quickly\s+|just\s+)?((have|take)\s+(a\s+)?(quick\s+)?(look|peek)|check|double[- ]check|verify|make sure|look it up|look that up|look up|search|find out|google)\b|\blook (that|it) up\b|\b(aku|saya|gue|gw|ku)\s+(cek|cari|carikan|cariin|pastikan|pastiin|lihat|liat)\b|\b(cek|cari|carikan|cariin|pastikan|pastiin)\s+(dulu|bentar)\b/i;
 
@@ -270,7 +298,11 @@ const chatBody = z.object({
       spokenText: z.string().max(4000),
       unspokenText: z.string().max(4000).optional().default(''),
     }).optional().nullable(),
-  }).passthrough()).min(1).max(400),
+  }).passthrough()).max(400),
+  // cross-conversation memory (server/memory.ts): built-in id or the client's custom persona id
+  memoryId: z.string().max(64).optional().nullable(),
+  // no user message: the persona opens a new conversation itself from what it remembers
+  opener: z.boolean().optional(),
   tools: z.object({ web: z.boolean().optional() }).optional().nullable(),
   resumeHint: z.enum(['continue', 'rephrase', 'drop']).optional().nullable(),
   audioTags: z.boolean().optional().default(true),
@@ -330,17 +362,27 @@ export async function llmRoutes(app: FastifyInstance) {
     const p = chatBody.safeParse(req.body);
     if (!p.success) return bad(reply, p.error.issues);
     const b = p.data;
+    const opener = !!b.opener;
+    if (!opener && !b.messages.length) return reply.code(400).send({ error: 'validation', message: 'messages kosong' });
     const model = lockedModel();
     // Priority: built-in characterId > custom persona > legacy customPrompt
     const char = characters.find((c) => c.id === (b.characterId === 'stripe' ? 'strix' : b.characterId));
     const custom = !char && b.persona ? b.persona : null;
-    const tools: string[] = (char?.tools ?? custom?.tools ?? []).filter((n) => n in toolDefs); // function tools besides web_search
+    // memory: a built-in always uses its own id; a custom persona uses its id (never a built-in's memory)
+    const memKey = memoryKey(b.memoryId);
+    const memId = !memKey ? null : char ? char.id : builtin(memKey) ? null : memKey;
+    const memName = char ? (String(b.charName ?? '').replace(/[^\p{L}\p{N}\s.'-]/gu, '').trim().slice(0, 30) || char.nick) : custom?.name || 'the character';
+    const mem = memId ? memoryContext(req.user!.id, memId, memName) : null;
+    // opener with nothing remembered: the client shows its static greeting (no LLM call, nothing charged)
+    if (opener && !mem?.has) return { noMemory: true };
+    const tools: string[] = opener ? [] : (char?.tools ?? custom?.tools ?? []).filter((n) => n in toolDefs); // function tools besides web_search
     const noFewShot = !!char?.noFewShot || tools.length > 0;
-    // every persona can hang up when it has truly had enough (interviewers already have end_interview for that)
-    const hangUp = !tools.includes('end_interview');
+    // every persona can hang up when it has truly had enough (interviewers already have end_interview for that);
+    // never on the opening line of a new call
+    const hangUp = !opener && !tools.includes('end_interview');
     const toolNames = hangUp ? [...tools, 'end_call'] : tools;
     // web_search: on by default for chat; the client can turn it off with tools:{web:false}; admin limit 0 disables it
-    const web = (b.tools?.web ?? true) && limitsFor(req.user!).searchPerDay > 0;
+    const web = !opener && (b.tools?.web ?? true) && limitsFor(req.user!).searchPerDay > 0;
     const today = new Date().toISOString().slice(0, 10);
     const language = custom?.language || b.language || '';
     const english = isEnglish(language);
@@ -361,8 +403,9 @@ export async function llmRoutes(app: FastifyInstance) {
         : '')
       + (accent && !ownAccent
         ? `\n\nACCENT: the character speaks with a ${accent} accent${char?.ownAccentRules ? ' (this replaces any accent-specific wording described above)' : ''}. Keep the wording plain, natural and everyday, like a TV show script: do NOT use rare, stereotypical or cartoonish slang for the accent (no "g'day", "righto", "beauty", "crikey", "ripper" and the like); at most a very common local word, rarely. Keep spelling standard, do not write phonetic spelling, and never mention the accent. The voice engine adds the actual accent automatically, so do NOT write any accent tag yourself.`
-        : '');
-    const kept = b.messages
+        : '')
+      + (mem?.block ?? '');
+    const kept = (opener ? [] : b.messages)
       .slice(-40)
       .filter((m) => ['user', 'assistant'].includes(m.role) && (typeof m.content === 'string' || (m.role === 'assistant' && m.interrupted)));
     // Interrupted assistant replies: the model sees only what was actually spoken + a cut marker
@@ -377,6 +420,14 @@ export async function llmRoutes(app: FastifyInstance) {
       }
       return { role: m.role, content: String(m.content).slice(0, 4000) };
     });
+    if (opener) {
+      // the persona speaks first in a new conversation, from what it remembers (one short in-character line)
+      const lang = mirror && mem?.lang && !isEnglish(mem.lang) ? ` I usually speak ${mem.lang}: open in ${mem.lang}.` : !english ? ` Speak ${language}.` : '';
+      history.push({
+        role: 'user',
+        content: `(Stage direction, not a line of mine: the call has just connected and you pick up; I have not said anything yet. You speak first: say your opening line now, out loud, as ${memName}, in the mood you are still in from last time (see WHAT YOU REMEMBER). ONE short line, 3-15 words${tags ? ', with one or two lowercase [audio tags] that fit your feeling' : ''}.${lang} If you hung up on me a short while ago and are still upset, be cold, clipped or wary, not cheerful, and do not hang up on this first line. If it ended well, be warm in your own way and you may touch on something from last time in a few words. If it has been days, you may notice it has been a while. No summary of the past, no list of questions.)`,
+      });
+    }
     if (!history.length) return reply.code(400).send({ error: 'validation', message: 'messages kosong' });
     // a resume right after the cut (no new user words): give the model a user turn to answer
     if (cut && history.at(-1)?.role === 'assistant') {
@@ -387,7 +438,9 @@ export async function llmRoutes(app: FastifyInstance) {
 
     // Few-shot + reminder: one turn = ONE short line, specific tags, react to the user's words
     const langHint = mirror ? ' Reply in the SAME language this message is written in (English only if unclear).' : english ? '' : ` Speak ${language}.`;
-    if (tags && char?.turnNote && history.at(-1)?.role === 'user') {
+    if (opener) {
+      /* the opener's stage direction already says how to speak */
+    } else if (tags && char?.turnNote && history.at(-1)?.role === 'user') {
       history[history.length - 1].content += char.turnNote.replace(/\)$/, `${langHint})`);
     } else if (tags && history.at(-1)?.role === 'user') {
       history[history.length - 1].content +=
@@ -496,7 +549,7 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
           } catch { /* aborted or upstream failure: just end the turn */ }
         }
         // the persona said it is hanging up / done but did not call end_call: make the call for it (text not relayed again)
-        if (hangUp && !calls.length && !ac.signal.aborted && HANGUP_RE.test(text.slice(-220))) {
+        if (hangUp && !calls.length && !ac.signal.aborted && await announcesHangup(text, lastUserText, ac.signal)) {
           try {
             convo.push({ role: 'assistant', content: text });
             const forced = await open(false, true, 'end_call');
@@ -572,7 +625,10 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
         if (c.name === 'end_call' && hangUp) {
           let a: any = {};
           try { a = JSON.parse(c.args || '{}'); } catch { /* broken args, use defaults */ }
-          send({ end: { decision: 'hangup', reason: oneLine(String(a.reason ?? '')).slice(0, 300) } });
+          const why = oneLine(String(a.reason ?? '')).slice(0, 300);
+          send({ end: { decision: 'hangup', reason: why } });
+          // remembered at once: the persona hung up (the client's /memory/commit refines it with a summary)
+          if (memId) try { noteHangup(userId, memId, why); } catch (e) { req.log.warn({ err: (e as Error).message }, 'memory: noteHangup failed'); }
           break;
         }
         if (c.name !== 'end_interview' || !tools.includes('end_interview')) continue;

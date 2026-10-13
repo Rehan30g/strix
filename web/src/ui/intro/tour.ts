@@ -496,7 +496,7 @@ export function openTour(opts: TourOpts = {}): void {
       try {
         if (!persona) throw new Error('no persona');
         ctrl = new AbortController();
-        await streamChat({ persona, messages: [{ role: 'user', content: text }], speak: true, signal: ctrl.signal, onText: (d) => { if (my === gen) ch.push(d); } });
+        await streamChat({ persona, memory: false, messages: [{ role: 'user', content: text }], speak: true, signal: ctrl.signal, onText: (d) => { if (my === gen) ch.push(d); } });
         if (my !== gen) return;
         ch.flush();
         note('chat streamed');

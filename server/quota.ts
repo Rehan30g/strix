@@ -9,6 +9,7 @@ export interface QuotaOverrides {
   sttSecPerDay?: number | null;
   searchPerDay?: number | null;
   decidePerDay?: number | null;
+  memoryPerDay?: number | null;
 }
 
 export interface Limits {
@@ -19,6 +20,7 @@ export interface Limits {
   sttSecPerDay: number;
   searchPerDay: number;
   decidePerDay: number;
+  memoryPerDay: number;
 }
 
 export const today = () => new Date().toISOString().slice(0, 10); // UTC day
@@ -43,18 +45,19 @@ export function limitsFor(user: Pick<UserRow, 'quota_json'>): Limits {
     sttSecPerDay: pick(o.sttSecPerDay, config.quota.sttSecPerDay),
     searchPerDay: pick(o.searchPerDay, config.quota.searchPerDay),
     decidePerDay: pick(o.decidePerDay, config.quota.decidePerDay),
+    memoryPerDay: pick(o.memoryPerDay, config.quota.memoryPerDay),
   };
 }
 
-interface UsageRow { llm_req: number; tts_chars: number; llm_tokens: number; vc_sec: number; stt_sec: number; search_req: number; decide_req: number }
+interface UsageRow { llm_req: number; tts_chars: number; llm_tokens: number; vc_sec: number; stt_sec: number; search_req: number; decide_req: number; memory_req: number }
 
 export function usageOf(userId: number, day = today()): UsageRow {
-  return one<UsageRow>('SELECT llm_req, tts_chars, llm_tokens, vc_sec, stt_sec, search_req, decide_req FROM usage WHERE user_id = ? AND day = ?', userId, day)
-    ?? { llm_req: 0, tts_chars: 0, llm_tokens: 0, vc_sec: 0, stt_sec: 0, search_req: 0, decide_req: 0 };
+  return one<UsageRow>('SELECT llm_req, tts_chars, llm_tokens, vc_sec, stt_sec, search_req, decide_req, memory_req FROM usage WHERE user_id = ? AND day = ?', userId, day)
+    ?? { llm_req: 0, tts_chars: 0, llm_tokens: 0, vc_sec: 0, stt_sec: 0, search_req: 0, decide_req: 0, memory_req: 0 };
 }
 
 export function usageToday(userIds: number[]): Map<number, UsageRow> {
-  const rows = all<UsageRow & { user_id: number }>('SELECT user_id, llm_req, tts_chars, llm_tokens, vc_sec, stt_sec, search_req, decide_req FROM usage WHERE day = ?', today());
+  const rows = all<UsageRow & { user_id: number }>('SELECT user_id, llm_req, tts_chars, llm_tokens, vc_sec, stt_sec, search_req, decide_req, memory_req FROM usage WHERE day = ?', today());
   const m = new Map<number, UsageRow>();
   for (const r of rows) if (userIds.includes(r.user_id)) m.set(r.user_id, r);
   return m;
@@ -70,12 +73,13 @@ export function quotaSummary(user: UserRow) {
     stt: { used: u.stt_sec, limit: l.sttSecPerDay },
     search: { used: u.search_req, limit: l.searchPerDay },
     decide: { used: u.decide_req, limit: l.decidePerDay },
+    memory: { used: u.memory_req, limit: l.memoryPerDay },
     resetAt: resetAt(),
   };
 }
 
 export class QuotaError extends Error {
-  constructor(public kind: 'llm' | 'tts' | 'clone' | 'vc' | 'stt' | 'search' | 'decide', public resetAt: string | null) {
+  constructor(public kind: 'llm' | 'tts' | 'clone' | 'vc' | 'stt' | 'search' | 'decide' | 'memory', public resetAt: string | null) {
     super(`quota exceeded: ${kind}`);
   }
 }
@@ -154,4 +158,20 @@ export function chargeDecide(user: UserRow) {
   const u = usageOf(user.id);
   if (u.decide_req + 1 > l.decidePerDay) throw new QuotaError('decide', resetAt());
   run('INSERT INTO usage (user_id, day, decide_req) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET decide_req = decide_req + 1', user.id, today());
+}
+
+/** Counts one memory summary (POST /api/memory/commit LLM call; separate from the LLM request quota).
+    Returns a refund function (the summary failed upstream). */
+export function chargeMemory(user: UserRow): () => void {
+  const l = limitsFor(user);
+  const u = usageOf(user.id);
+  if (u.memory_req + 1 > l.memoryPerDay) throw new QuotaError('memory', resetAt());
+  const day = today();
+  run('INSERT INTO usage (user_id, day, memory_req) VALUES (?, ?, 1) ON CONFLICT(user_id, day) DO UPDATE SET memory_req = memory_req + 1', user.id, day);
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    run('UPDATE usage SET memory_req = MAX(0, memory_req - 1) WHERE user_id = ? AND day = ?', user.id, day);
+  };
 }

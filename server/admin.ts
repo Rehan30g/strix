@@ -4,6 +4,7 @@ import { all, iso, one, run, type InviteRow, type UserRow } from './db.js';
 import { deleteUserVoices } from './eleven.js';
 import { adminSlots, cleanupUnreferenced } from './library.js';
 import { generateCode } from './invites.js';
+import { forgetAllMemory } from './memory.js';
 import { limitsFor, overridesOf, usageToday } from './quota.js';
 
 const admin = { config: { access: 'admin' as const } };
@@ -29,6 +30,7 @@ const quotaBody = z.object({
   sttSecPerDay: z.number().int().min(0).max(10_000_000).nullable().optional(),
   searchPerDay: z.number().int().min(0).max(1_000_000).nullable().optional(),
   decidePerDay: z.number().int().min(0).max(10_000_000).nullable().optional(),
+  memoryPerDay: z.number().int().min(0).max(1_000_000).nullable().optional(),
 });
 
 function inviteOut(r: InviteRow & { created_by_email?: string | null }, users: { email: string; invite_id: number }[]) {
@@ -101,7 +103,7 @@ export async function adminRoutes(app: FastifyInstance) {
           inviteCode: u.invite_code,
           createdAt: iso(u.created_at),
           clones: u.clones,
-          usageToday: { llm: us?.llm_req ?? 0, tts: us?.tts_chars ?? 0, tokens: us?.llm_tokens ?? 0, vc: us?.vc_sec ?? 0, stt: us?.stt_sec ?? 0, search: us?.search_req ?? 0, decide: us?.decide_req ?? 0 },
+          usageToday: { llm: us?.llm_req ?? 0, tts: us?.tts_chars ?? 0, tokens: us?.llm_tokens ?? 0, vc: us?.vc_sec ?? 0, stt: us?.stt_sec ?? 0, search: us?.search_req ?? 0, decide: us?.decide_req ?? 0, memory: us?.memory_req ?? 0 },
           limits: limitsFor(u),
           quotaOverrides: overridesOf(u),
         };
@@ -152,6 +154,14 @@ export async function adminRoutes(app: FastifyInstance) {
     } catch (e) {
       return reply.code(502).send({ error: 'upstream', message: (e as Error).message });
     }
+  });
+
+  // Chat memory of a user (persona_memory + shared_events), e.g. on request or before suspending an account
+  app.delete('/api/admin/users/:id/memory', admin, async (req, reply) => {
+    const id = idParam(req.params);
+    if (!id) return reply.code(400).send({ error: 'validation' });
+    if (!one('SELECT 1 FROM users WHERE id = ?', id)) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, ...forgetAllMemory(id) };
   });
 
   // Public Voice Library slots on the ElevenLabs account
