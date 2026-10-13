@@ -16,7 +16,7 @@ import type { Character } from '../../api';
 import { h, onDisconnect } from '../../ui/dom';
 import { field } from '../../ui/controls';
 import { voicePicker } from '../../ui/voicepicker';
-import { orb, jelly, thinkingLevel, onOrbsChange } from '../../ui/orb';
+import { orb, jelly, thinkingLevel, onOrbsChange, emptyOrbSpec } from '../../ui/orb';
 import { openOrbStudio } from '../../ui/orbstudio';
 import { orbGhost, handOff, receiveOrb, flyOrb, morphOrb, enter } from '../../ui/transition';
 import { drag, swipeRow, haptic, rubber, settle } from '../../ui/gesture';
@@ -99,7 +99,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   const micBars = h('span', { class: 'vx-bars', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
   const sendBtn = h('button', { type: 'submit', class: 'vx-send', 'aria-label': 'Kirim', html: S('arrowUp') });
   const form = h('form', { class: 'vx-bar' }, micBtn, input, sendBtn);
-  const restartBar = h('div', { class: 'vx-ended', hidden: true }, ui.btn({ label: 'Mulai ulang percakapan', icon: 'refresh', cls: 'primary', onClick: () => restart() }));
+  const restartBar = h('div', { class: 'vx-ended', hidden: true }, ui.btn({ label: 'Mulai percakapan baru', icon: 'refresh', cls: 'primary', onClick: () => restart() }));
   const edge = h('div', { class: 'vx-edge', 'data-hswipe': '1', 'aria-hidden': 'true' });
   const wrap = h('div', { class: 'vx', 'data-state': 'idle' }, top, stage, orbWrap, h('div', { class: 'vx-bottom' }, form, restartBar), edge);
   root.append(wrap);
@@ -392,7 +392,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   }
   function showVerdict(v: Verdict) {
     caps.block('verdict', 'verdict');
-    caps.show([v.decision === 'passed' ? 'Lolos interview.' : 'Interview berakhir: ditolak.', v.reason || '', v.feedback || ''].filter(Boolean).join(' '));
+    const head = v.decision === 'hangup' ? `${cur?.name || 'Persona'} menutup telepon.` : v.decision === 'passed' ? 'Lolos interview.' : 'Interview berakhir: ditolak.';
+    caps.show([head, v.reason || '', v.feedback || ''].filter(Boolean).join(' '));
     restartBar.hidden = false; form.hidden = true;
     if (rec) { const r = rec; rec = null; r.abort(); }
     paintHead();
@@ -841,6 +842,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function openPersonaSheet() {
     const list = h('div', { class: 'ps-list', role: 'list' });
     let curRowOrb: HTMLElement | null = null, picking = false;
+    /** an action from a row; "Edit" opens the persona forge: that row's orb grows into it (connected transition) */
+    const runAct = (a: { icon: string; run: () => void }, rowOrb: HTMLElement) => {
+      if (a.icon === 'edit') { picking = true; const g = orbGhost(rowOrb); m.close(); if (g) handOff(g); a.run(); return; }
+      m.close(); a.run();
+    };
     const paint = () => {
       const rows: Node[] = [];
       if (!loaded) rows.push(...[0, 1, 2].map(() => h('div', { class: 'skel', style: 'height:60px;margin:4px 0' })));
@@ -863,8 +869,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
           setTimeout(() => { if (theOrb.style.visibility === 'hidden' && !document.querySelector('.orb-ghost')) theOrb.style.visibility = ''; }, 900);
         };
         const more = h('button', { type: 'button', class: 'btn icon ghost ps-more', 'aria-label': `Aksi untuk ${p.name}`, 'aria-haspopup': 'menu', html: S('moreV') });
-        more.onclick = (e) => { e.stopPropagation(); ui.popover(more, h('div', null, ...actions(p).map((a) => ui.menuItem(a.label, a.icon, () => { m.close(); a.run(); }, a.cls || ''))), { align: 'end' }); };
-        const host = swipeRow(h('div', { class: 'ps-row' }, main, more), actions(p).map((a) => ({ ...a, run: () => { m.close(); a.run(); } })), S);
+        more.onclick = (e) => { e.stopPropagation(); ui.popover(more, h('div', null, ...actions(p).map((a) => ui.menuItem(a.label, a.icon, () => runAct(a, rowOrb), a.cls || ''))), { align: 'end' }); };
+        const host = swipeRow(h('div', { class: 'ps-row' }, main, more), actions(p).map((a) => ({ ...a, run: () => runAct(a, rowOrb) })), S);
         host.setAttribute('role', 'listitem');
         rows.push(host);
       }
@@ -879,11 +885,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       picking = true;
       // a new, still empty orb grows from the button into the persona forge
       const ic = (mk.querySelector('svg') || mk) as HTMLElement, r = ic.getBoundingClientRect();
-      const seed = orb(orbSpecFor({ voiceId: (ctx.store.get().voices || [])[0]?.id || DEFAULT_VOICE, name: 'Persona' }), { size: Math.max(20, Math.round(r.width)), cls: 'orb-ghost', live: true });
+      const seed = orb(emptyOrbSpec(), { size: Math.max(20, Math.round(r.width)), cls: 'orb-ghost', live: true });
       seed.style.left = r.left + 'px'; seed.style.top = r.top + 'px';
       document.body.append(seed); handOff(seed);
       m.close(); newPersona();
-      setTimeout(() => { if (!document.querySelector('.pf')) theOrb.style.visibility = ''; }, 400);
     };
     paint();
     // shared element: the big orb shrinks into the active persona's row (and comes back when the sheet closes)
@@ -1001,6 +1006,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       m.close(); refreshPersona(); ui.toast('Tersimpan.', { kind: 'ok', timeout: 1800 });
     };
   }
+  /** the persona editor is gone (saved or not): the orb that left it flies home onto the big orb; never stays hidden */
+  function orbHome() { void receiveOrb(theOrb).then(() => { theOrb.style.visibility = ''; }); }
   function editPersona(c: CustomPersona) {
     openPersonaEditor(ctx, c, (out) => {
       saveCustom(out);
@@ -1008,9 +1015,9 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       buildPersonas();
       if (cur?.id === out.id) open(out.id);
       ui.toast('Persona disimpan.', { kind: 'ok' });
-    });
+    }, { onClosed: orbHome });
   }
-  function newPersona() { createPersonaFlow(ctx, { onCreated: () => buildPersonas() }); }
+  function newPersona() { createPersonaFlow(ctx, { onCreated: () => buildPersonas(), onClosed: orbHome }); }
   function refreshPersona() { buildPersonas(); paintHead(); }
 
   /* ================= route ================= */

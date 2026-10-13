@@ -63,7 +63,7 @@ export interface ChatMsg {
   /** this reply continues an interrupted one ("Lanjutkan") */
   resumed?: boolean;
 }
-export interface Verdict { decision: 'passed' | 'rejected'; reason?: string; feedback?: string }
+export interface Verdict { decision: 'passed' | 'rejected' | 'hangup'; reason?: string; feedback?: string }
 export interface ChatLog { msgs: ChatMsg[]; verdict?: Verdict | null }
 
 export const LANGS: Array<[string, string, string, string]> = [

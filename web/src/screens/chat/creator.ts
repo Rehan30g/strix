@@ -223,16 +223,17 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
 
 const reduceMq = matchMedia('(prefers-reduced-motion: reduce)');
 
-export function openPersonaEditor(ctx: ScreenCtx, existing: CustomPersona | null, onSaved: (p: CustomPersona, isNew: boolean) => void, opts: { voiceId?: string } = {}): void {
+/** `onClosed(saved)` runs once the editor is gone (saved or not), e.g. to bring the screen's own orb back. */
+export function openPersonaEditor(ctx: ScreenCtx, existing: CustomPersona | null, onSaved: (p: CustomPersona, isNew: boolean) => void, opts: { voiceId?: string; onClosed?: (saved: boolean) => void } = {}): void {
   // one editor at a time (a double / spam click on an opener does not stack a second one)
   if (document.querySelector('.pf:not(.closing)')) return;
   // reduced motion: the plain form (no sphere, no flights); otherwise the immersive forge
   if (reduceMq.matches || (window as unknown as { __classicPersona?: boolean }).__classicPersona) { openClassicEditor(ctx, existing, onSaved, opts); return; }
-  openForge(ctx, personaForm(ctx, existing, opts), onSaved);
+  openForge(ctx, personaForm(ctx, existing, opts), onSaved, opts.onClosed);
 }
 
 /** The plain modal editor (reduced motion). */
-export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null, onSaved: (p: CustomPersona, isNew: boolean) => void, opts: { voiceId?: string } = {}): void {
+export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null, onSaved: (p: CustomPersona, isNew: boolean) => void, opts: { voiceId?: string; onClosed?: (saved: boolean) => void } = {}): void {
   const { ui, icons } = ctx;
   const S = icons.svg;
   const f = personaForm(ctx, existing, opts);
@@ -271,7 +272,8 @@ export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null
   const body = h('div', { class: 'stack pa' }, head, isNew ? modeSeg : null, aiPane, loading, formEl, f.msg);
   const save = ui.btn({ label: isNew ? 'Simpan persona' : 'Simpan', cls: 'primary' });
   const cancel = ui.btn({ label: 'Batal', cls: 'ghost' });
-  const m = ui.modal({ title: isNew ? 'Persona baru' : 'Edit persona', cls: 'persona-dlg', body, actions: [cancel, save], onClose: () => f.abort() });
+  let savedIt = false;
+  const m = ui.modal({ title: isNew ? 'Persona baru' : 'Edit persona', cls: 'persona-dlg', body, actions: [cancel, save], onClose: () => { f.abort(); queueMicrotask(() => opts.onClosed?.(savedIt)); } });
   function paint() {
     const busy = f.busy();
     aiPane.hidden = mode !== 'ai' || busy;
@@ -295,19 +297,20 @@ export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null
       return;
     }
     const out = f.result();
+    savedIt = true;
     m.close();
-    onSaved(out, isNew);
+    onSaved(out, isNew);   // (onClosed runs after this, in a microtask)
   };
   paintHead(); paint();
 }
 
 /** One flow for "Buat persona" everywhere (Chat, after a clone, intro): editor -> save -> offer Studio Bola / start talking. */
-export function createPersonaFlow(ctx: ScreenCtx, opts: { voiceId?: string; onCreated?: (p: CustomPersona) => void } = {}): void {
+export function createPersonaFlow(ctx: ScreenCtx, opts: { voiceId?: string; onCreated?: (p: CustomPersona) => void; onClosed?: (saved: boolean) => void } = {}): void {
   openPersonaEditor(ctx, null, (out) => {
     saveCustom(out);
     opts.onCreated?.(out);
     offerAfterPersona(ctx, out);
-  }, { voiceId: opts.voiceId });
+  }, { voiceId: opts.voiceId, onClosed: opts.onClosed });
 }
 
 /** "Persona siap": big orb, start talking, or shape its orb first. */

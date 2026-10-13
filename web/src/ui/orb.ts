@@ -65,6 +65,9 @@ export function customOrb(c: CustomOrb, seedKey = ''): OrbSpec {
   specCache.set(key, s);
   return s;
 }
+/** The orb of a persona that has no ingredients yet: neutral, light grey glass (the same spec everywhere: the
+    "Buat persona" seed, the forge, so the match-cut stays seamless). */
+export function emptyOrbSpec(): OrbSpec { return customOrb({ colors: ['#868a94', '#aeb2bb', '#cbced5', '#e7e9ed'], style: 'mesh', speed: 0.5, soft: 0.85 }, 'empty'); }
 /** The editable description of any spec (used to open the Studio on a deterministic orb). */
 export function specToCustom(s: OrbSpec): CustomOrb {
   return { colors: [s.colors[0], s.colors[1], s.colors[2], s.colors[3], ...(s.extra ? [s.extra] : [])].map(rgbToHex), style: PAT_STYLE[s.pattern] || 'aurora', speed: s.speed ?? 1, soft: s.soft ?? 0.5, ...(s.shape ? { shape: ORB_SHAPES[s.shape] } : {}) };

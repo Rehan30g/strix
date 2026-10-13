@@ -96,7 +96,9 @@ void main(){
  if(inside<.5){
   // the persona's orb: 2D at rest, wrapped on the sphere when k -> 1
   vec4 o=orbAt(mix(p2,p3,fKk));
-  float b=dot(fPos,rd),c=dot(fPos,fPos)-b*b;
+  // the silhouette in the same (squashed) space as the hit point the colours come from: one object
+  vec3 so=fPos/fSq,sd=normalize(rd/fSq);
+  float b=dot(so,sd),c=dot(so,so)-b*b;
   float mask=1.-smoothstep(1.-1.2/max(1.,fRS),1.+1.2/max(1.,fRS),sqrt(max(c,0.)));
   float al=mix(o.a,mask,fKk);
   vec3 oc=o.a>.002?o.rgb/o.a:vec3(0.);

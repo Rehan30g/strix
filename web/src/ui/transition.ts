@@ -41,7 +41,7 @@ export async function swap(el: HTMLElement | null, change: () => void | Promise<
 type LiveOrb = HTMLElement & { _spec?: OrbSpec; _live?: { time: number } | null };
 /* expiry is left to the timer in handOff (no clock comparisons: some environments report odd performance.now() jumps) */
 let handed: { el: LiveOrb } | null = null;
-let flight: { fly: LiveOrb; target: HTMLElement; done: () => void } | null = null;
+let flight: { fly: LiveOrb; target: HTMLElement; done: () => void; p: Promise<void> } | null = null;
 const timeOf = (el: LiveOrb | null | undefined) => (el?._live ? el._live.time : el?._spec?.t0 ?? null);
 /** Hand a (fixed-position, page-level) orb element over to whatever opens next. If nobody takes it, it fades away. */
 export function handOff(el: HTMLElement, ttl = 1500): void {
@@ -77,14 +77,22 @@ export function orbGhost(src: HTMLElement | null | undefined): HTMLElement | nul
 export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
   const h = handed;
   handed = null;
-  if (!h || !h.el.isConnected) { h?.el.remove(); return Promise.resolve(); }
+  if (!h || !h.el.isConnected) {
+    h?.el.remove();
+    // nothing new to receive, but an orb is already flying onto this target: wait for that one
+    if (flight && flight.target === target) return flight.p;
+    return Promise.resolve();
+  }
   flight?.done();
   const fly = h.el;
   const r0 = fly.getBoundingClientRect();
   target.style.visibility = 'hidden';
   const red = reducedMotion();
   const t0 = performance.now(), dur = red ? 1 : ms;
-  return new Promise((res) => {
+  let resolveP: () => void = () => {};
+  const p = new Promise<void>((r) => { resolveP = r; });
+  {
+    const res = resolveP;
     let over = false;
     const done = () => {
       if (over) return; over = true;
@@ -95,7 +103,7 @@ export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
       if (flight?.fly === fly) flight = null;
       res();
     };
-    flight = { fly, target, done };
+    flight = { fly, target, done, p };
     const step = (now: number) => {
       if (over) return;
       const k = Math.min(1, (now - t0) / dur), e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
@@ -110,7 +118,8 @@ export function receiveOrb(target: HTMLElement, ms = 460): Promise<void> {
       requestAnimationFrame(done);
     };
     requestAnimationFrame(step);
-  });
+  }
+  return p;
 }
 /** Shared element: a copy of `from` flies onto `to` (both stay where they are; `to` is hidden until it lands). */
 export function flyOrb(from: HTMLElement | null | undefined, to: HTMLElement | null | undefined, ms = 460): Promise<void> {

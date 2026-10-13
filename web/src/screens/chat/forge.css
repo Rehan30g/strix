@@ -63,7 +63,9 @@
 .pf-ing.filled .pf-n { color: var(--pa); }
 .pf-ing.used { opacity: .35; }
 .pf-obar { display: flex; gap: 8px; }
-.pf-obar .pf-btn { flex: 1; }
+.pf-obar .pf-btn { flex: 1 1 0; min-width: 0; padding: 0 10px; }
+.pf-obar .pf-btn span { overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .pf-obar .pf-btn { font-size: 15px; gap: 6px; } }
 
 /* ---------- inside: tabs, panels on the inner wall, bottom bar ---------- */
 .pf-in { position: absolute; inset: 0; z-index: 2; pointer-events: none; visibility: hidden; }
