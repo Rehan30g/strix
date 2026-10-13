@@ -94,7 +94,26 @@ const toolDefs: Record<string, unknown> = {
       },
     },
   },
+  end_call: {
+    type: 'function',
+    function: {
+      name: 'end_call',
+      description:
+        'Hang up on the user and lock this conversation until they start a new one. Say your short final line in the same reply FIRST, then call this. Only when you have genuinely had enough (see ENDING THE CALL).',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', description: "One short, neutral sentence for the user's screen about why the call ended (not in character, no insults)." },
+        },
+        required: ['reason'],
+      },
+    },
+  },
 };
+
+const END_CALL_RULES = `
+
+ENDING THE CALL: you have a tool end_call that hangs up on the user and locks the conversation until they start a new one. Use it ONLY when, in character, you have genuinely had enough: the user keeps pushing, insulting or provoking you after you already warned them or showed you were upset, or you have clearly decided you will not go on talking with them. Never for a single rude line, mild discomfort, or a topic you can simply refuse. First say your short final line in the same reply (angry, cold, tired or simply done, whatever fits your mood), then call end_call in that same turn with a one-sentence neutral reason for the user's screen. After you call it the user cannot reply.`;
 
 const webSearchTool = {
   type: 'function',
@@ -141,7 +160,10 @@ function interruptedNote(cut: { spoken: string; unspoken: string }, hint: 'conti
 }
 
 /** A reply that ends by promising to look something up ("let me check", "bentar, aku cek dulu"). */
-const PROMISE_RE = /\b(let me|lemme|i'?ll|i will|gonna|going to)\s+(quickly\s+|just\s+)?((have|take)\s+(a\s+)?(quick\s+)?(look|peek)|check|double[- ]check|verify|make sure|look it up|look that up|look up|search|find out|google)\b|\blook (that|it) up\b|\b(aku|saya|gue|gw|ku)\s+(cek|cari|carikan|cariin|pastikan|pastiin|lihat|liat)\b|\b(cek|cari|carikan|cariin|pastikan|pastiin)\s+(dulu|bentar)\b/i;
+// the persona announces it is ending the call (EN / ID); used only to complete a forgotten end_call tool call
+const HANGUP_RE = /\b(hang(?:ing)? up|i'?m (?:done|out of here|leaving)|we'?re (?:done|finished)|this (?:conversation |call )?is over|i'?m not (?:talking|doing this)(?: to you)?(?: any ?more)?|(?:goodbye|bye) for (?:good|now)|aku (?:tutup|sudah selesai|pergi)|kita selesai|sudah cukup)\b/i;
+
+const PROMISE_RE =/\b(let me|lemme|i'?ll|i will|gonna|going to)\s+(quickly\s+|just\s+)?((have|take)\s+(a\s+)?(quick\s+)?(look|peek)|check|double[- ]check|verify|make sure|look it up|look that up|look up|search|find out|google)\b|\blook (that|it) up\b|\b(aku|saya|gue|gw|ku)\s+(cek|cari|carikan|cariin|pastikan|pastiin|lihat|liat)\b|\b(cek|cari|carikan|cariin|pastikan|pastiin)\s+(dulu|bentar)\b/i;
 
 /** Fallback "let me check" line when the model called web_search without saying anything first. */
 function fallbackPreamble(lastUser: string, language: string, tags: boolean) {
@@ -314,6 +336,9 @@ export async function llmRoutes(app: FastifyInstance) {
     const custom = !char && b.persona ? b.persona : null;
     const tools: string[] = (char?.tools ?? custom?.tools ?? []).filter((n) => n in toolDefs); // function tools besides web_search
     const noFewShot = !!char?.noFewShot || tools.length > 0;
+    // every persona can hang up when it has truly had enough (interviewers already have end_interview for that)
+    const hangUp = !tools.includes('end_interview');
+    const toolNames = hangUp ? [...tools, 'end_call'] : tools;
     // web_search: on by default for chat; the client can turn it off with tools:{web:false}; admin limit 0 disables it
     const web = (b.tools?.web ?? true) && limitsFor(req.user!).searchPerDay > 0;
     const today = new Date().toISOString().slice(0, 10);
@@ -330,7 +355,7 @@ export async function llmRoutes(app: FastifyInstance) {
     const tags = b.audioTags || !!char?.alwaysTags; // some built-ins always speak with audio tags
     // the built-in's own accent guidance covers its default accent; a client override gets the generic block
     const ownAccent = !!char?.ownAccentRules && accent === char.accent;
-    const system = persona + baseRules(language, mirror) + (tags ? (char?.voiceRules ?? audioTagRules) : noTagRules)
+    const system = persona + baseRules(language, mirror) + (tags ? (char?.voiceRules ?? audioTagRules) : noTagRules) + (hangUp ? END_CALL_RULES : '')
       + (tags && !english
         ? `\n\nLANGUAGE NOTE: your spoken words are in ${language}, so write fillers and hesitations the way ${language} speakers really say them (not English "uhh/umm" unless natives use them too). Audio tags stay in English inside [brackets].`
         : '')
@@ -383,8 +408,8 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
     const user = req.user!;
     const userId = user.id;
     const convo: any[] = [{ role: 'system', content: system + fewShot + (web ? webRules(today) : '') + interruptNote }, ...history];
-    const open = (withWeb: boolean, forceSearch = false) => {
-      const defs = forceSearch ? [webSearchTool] : [...tools.map((n) => toolDefs[n]), ...(withWeb ? [webSearchTool] : [])];
+    const open = (withWeb: boolean, forceSearch = false, forceTool: 'web_search' | 'end_call' = 'web_search') => {
+      const defs = forceSearch ? [forceTool === 'end_call' ? toolDefs.end_call : webSearchTool] : [...toolNames.map((n) => toolDefs[n]), ...(withWeb ? [webSearchTool] : [])];
       return openrouter({
         model,
         stream: true,
@@ -393,7 +418,7 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
         max_tokens: defs.length ? 700 : 250,
         temperature: 0.9,
         usage: { include: true },
-        ...(defs.length && { tools: defs, tool_choice: forceSearch ? { type: 'function', function: { name: 'web_search' } } : 'auto' }),
+        ...(defs.length && { tools: defs, tool_choice: forceSearch ? { type: 'function', function: { name: forceTool } } : 'auto' }),
         messages: withCache(model, convo),
       }, ac.signal);
     };
@@ -470,6 +495,15 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
             else await forced.text().catch(() => '');
           } catch { /* aborted or upstream failure: just end the turn */ }
         }
+        // the persona said it is hanging up / done but did not call end_call: make the call for it (text not relayed again)
+        if (hangUp && !calls.length && !ac.signal.aborted && HANGUP_RE.test(text.slice(-220))) {
+          try {
+            convo.push({ role: 'assistant', content: text });
+            const forced = await open(false, true, 'end_call');
+            if (forced.ok && forced.body) allCalls.push(...(await relay(forced, '', true)).calls.filter((c) => c.name === 'end_call').slice(0, 1));
+            else await forced.text().catch(() => '');
+          } catch { /* aborted or upstream failure: just end the turn */ }
+        }
         if (!webCalls.length || !web || ac.signal.aborted) break;
         // never search silently: if the model said nothing first, say a short line for it
         if (!text.trim()) {
@@ -535,6 +569,12 @@ B: [chuckling] Okay, that's actually impressive. [sighing] [deadpan] Which windo
       }
       // end_interview tool call -> send decision to client, the client locks the conversation
       for (const c of allCalls) {
+        if (c.name === 'end_call' && hangUp) {
+          let a: any = {};
+          try { a = JSON.parse(c.args || '{}'); } catch { /* broken args, use defaults */ }
+          send({ end: { decision: 'hangup', reason: oneLine(String(a.reason ?? '')).slice(0, 300) } });
+          break;
+        }
         if (c.name !== 'end_interview' || !tools.includes('end_interview')) continue;
         let a: any = {};
         try { a = JSON.parse(c.args || '{}'); } catch { /* broken args, use defaults */ }
