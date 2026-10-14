@@ -45,10 +45,28 @@ if [[ $MODE == harden ]]; then harden_ssh; exit 0; fi
 [[ -n "$DOMAIN" && -n "$DEPLOY_USER" ]] || { echo "usage: sudo bash bootstrap.sh <domain> <deploy-user> [--harden-ssh]"; exit 1; }
 id "$DEPLOY_USER" >/dev/null 2>&1 || { echo "no such user: $DEPLOY_USER"; exit 1; }
 
+say "package mirror check"
+# Some providers point apt at a regional mirror (for example id.archive.ubuntu.com) that can be unreachable from the VPS.
+# If the configured mirror does not answer, fall back to the main Ubuntu mirror.
+. /etc/os-release
+SRC_FILES=$(ls /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true)
+MIRROR="$(grep -ohE 'https?://[a-z0-9.-]+\.archive\.ubuntu\.com' $SRC_FILES 2>/dev/null | head -1 || true)"
+if [[ -n "$MIRROR" ]]; then
+  if curl -4 -fsI --connect-timeout 8 --max-time 12 "$MIRROR/ubuntu/dists/${VERSION_CODENAME}/Release" >/dev/null 2>&1; then
+    echo "mirror ok: $MIRROR"
+  else
+    echo "mirror $MIRROR is unreachable from this server, switching to http://archive.ubuntu.com"
+    # shellcheck disable=SC2086
+    sed -i -E 's#https?://[a-z0-9.-]+\.archive\.ubuntu\.com#http://archive.ubuntu.com#g' $SRC_FILES
+  fi
+fi
+
 say "base packages"
 export DEBIAN_FRONTEND=noninteractive
 $APT update
-$APT install ca-certificates curl gnupg ufw fail2ban git rsync sqlite3 debian-keyring debian-archive-keyring apt-transport-https
+PKGS="ca-certificates curl gnupg ufw fail2ban git rsync sqlite3 debian-keyring debian-archive-keyring apt-transport-https"
+# shellcheck disable=SC2086
+$APT install $PKGS || { echo "retrying with --fix-missing"; $APT update; $APT install --fix-missing $PKGS; }
 
 say "Node.js $NODE_MAJOR"
 if ! command -v node >/dev/null || [[ "$(node -p 'process.versions.node.split(".")[0]')" != "$NODE_MAJOR" ]]; then
