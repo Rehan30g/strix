@@ -98,4 +98,9 @@ onApiEvent((e) => {
 // dev-only handle for debugging / automated UI tests
 if (import.meta.env.DEV) (window as any).__sm = { api, store, settings, player };
 
+window.addEventListener('vite:preloadError', (ev) => {
+  try { const t = Number(sessionStorage.getItem('sm2.staleReload') || 0); if (Date.now() - t < 30000) return; sessionStorage.setItem('sm2.staleReload', String(Date.now())); } catch { /* private mode */ }
+  ev.preventDefault(); location.reload();
+});
+
 boot();

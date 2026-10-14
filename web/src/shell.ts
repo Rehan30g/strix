@@ -10,6 +10,15 @@ import { openAccount } from './ui/account';
 import { drag, rubber, settle, haptic } from './ui/gesture';
 import { enter, leave } from './ui/transition';
 
+/** Reload once (not in a loop) when a lazy chunk is gone; true = reloading. */
+function staleReload(): boolean {
+  try {
+    const t = Number(sessionStorage.getItem('sm2.staleReload') || 0);
+    if (Date.now() - t < 30000) return false;
+    sessionStorage.setItem('sm2.staleReload', String(Date.now()));
+  } catch { /* private mode: just reload once */ }
+  location.reload(); return true;
+}
 export function mountShell(root: HTMLElement, onLogout: () => void): () => void {
   const isAdmin = () => !!store.get().me?.user.isAdmin;
   const tabs = ROUTES.filter((r) => r.tab);
@@ -152,6 +161,8 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
     let mod: { mount: (r: HTMLElement, c: any) => MountResult };
     try { [mod] = await Promise.all([def.load(), leaving]); } catch (e) {
       console.error(e);
+      // a tab opened before a deploy still points at chunks that no longer exist: fetch the fresh build once
+      if (staleReload()) return;
       view.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, 'Gagal memuat halaman'), h('p', null, 'Periksa koneksi lalu muat ulang.')));
       return;
     }
