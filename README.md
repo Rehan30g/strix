@@ -39,11 +39,6 @@ Proyek ini dibuat sebagai eksperimen pribadi. Bagian yang sudah teruji dan yang 
 - **Ingatan lintas percakapan.** Setelah obrolan, ringkasan singkat, beberapa fakta, dan suasana hati persona disimpan di server. Persona yang tadi menutup telepon karena kesal masih agak dingin waktu kamu telepon lagi, lalu pelan-pelan reda. Semuanya bisa dilihat dan dihapus di lembar **Ingatan**.
 - Bisa diketik, ditekan-tahan untuk bicara, atau mode bebas tangan.
 
-### 🦉 Dua persona bawaan yang tidak akur
-- **Strix**: bapak-bapak Australia yang hangat, agak canggung, humornya kering. Gampang tersentuh, bisa tersinggung, dan bisa luluh kalau kamu minta maaf dengan tulus.
-- **Lena**: perempuan Kanada yang cepat, kering, dan lucu dengan gaya orang capek.
-- Mereka mantan pasangan yang dulu membawakan acara telepon radio larut malam bersama. Sekarang bermusuhan, dan masing-masing punya versi ceritanya sendiri. Mereka juga mendengar kabar tentang obrolanmu dengan yang satunya, secara tidak langsung.
-
 ### 📞 Panggilan berdua (dan bertiga)
 - Masukkan sampai tiga persona (bawaan atau buatanmu) ke satu panggilan. Mereka bicara denganmu **dan satu sama lain**. Yang sedang bicara membesar, caption berwarna sesuai pembicara.
 - Waktu kamu menelepon seseorang, yang sudah ada di panggilan bereaksi keras ("tunggu, kamu nelepon DIA?"). Yang ditelepon bisa mengangkat, menolak, atau membiarkannya berdering.
