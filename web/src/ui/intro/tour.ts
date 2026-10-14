@@ -22,7 +22,8 @@ import { h } from '../dom';
 import { svg } from '../../icons';
 import { customOrb, defaultVoiceOrb, personaOrb, hexToRgb, type OrbEl, type OrbSpec, type Rgb } from '../orb';
 import { DEFAULT_VOICE, chatPrefs, fromCharacter, streamChat, ttsText, type Persona } from '../../lib/persona';
-import { loadCharacters } from '../../store';
+import { loadCharacters, store } from '../../store';
+import { fmtEndDate, fmtEndShort, leftLabel } from '../about';
 import { player, chunker } from '../../player';
 import { autoTag, bareWords } from '../../lib/autotag';
 import { BRAND } from '../../lib/brand';
@@ -130,6 +131,12 @@ export function openTour(opts: TourOpts = {}): void {
   const skipStep = h('button', { type: 'button', class: 'tu-skipstep' }, 'Skip this');
   const nextBtn = h('button', { type: 'button', class: 'tu-next' }, h('span', null, 'Next'), h('span', { class: 'tu-nextic', html: S('arrowRight') }));
   const startBtn = h('button', { type: 'button', class: 'tu-start', hidden: true }, h('span', null, 'Start talking'), h('span', { class: 'tu-nextic', html: S('arrowRight') }));
+  // this is a short closed test: say so, with the end date from the server (TEST_END_DATE), right in the tour
+  const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '2026-10-20');
+  // the pill stays small all along; on the last step the same pill spells it out (top of the screen: the narration lives at the bottom)
+  const testChip = h('div', { class: 'tu-test' }, h('i', { 'aria-hidden': 'true' }),
+    h('span', { class: 'short' }, `Uji coba sementara · ditutup ${fmtEndShort(endIso)}`),
+    h('span', { class: 'long' }, h('b', null, 'Ini uji coba sementara.'), ` Ditutup ${fmtEndDate(endIso)} (${leftLabel(endIso)}).`));
   const nav = h('div', { class: 'tu-nav' }, skipStep, nextBtn, startBtn);
   const dots = h('div', { class: 'tu-dots', 'aria-hidden': 'true' }, ...[0, 1, 2, 3].map(() => h('i')));
   const skipTour = h('button', { type: 'button', class: 'tu-skiptour' }, 'Skip tour');
@@ -141,7 +148,7 @@ export function openTour(opts: TourOpts = {}): void {
   if (mandatory) { skipTour.hidden = true; gSkip.hidden = true; }
   const gate = h('div', { class: 'tu-gate' }, h('div', { class: 'tu-gbtns' }, gPlay, h('p', { class: 'tu-gnote' }, 'a short tour · sound on'), gSkip));
   const root = h('div', { class: 'tour gated pending', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${BRAND} tour` },
-    back.canvas, world, front.canvas, ...flabels, vlabel, narr, nav, top, gate);
+    back.canvas, world, front.canvas, ...flabels, vlabel, narr, nav, top, testChip, gate);
   document.body.append(root);
   const html = document.documentElement;
   html.classList.add('intro-open');

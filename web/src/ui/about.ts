@@ -24,6 +24,11 @@ export function fmtEndDate(iso: string): string {
   const t = dayStart(iso);
   return Number.isFinite(t) ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : iso;
 }
+/** "20 Okt" */
+export function fmtEndShort(iso: string): string {
+  const t = dayStart(iso);
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : iso;
+}
 /** whole days from today to the end day (0 = today, negative = already over) */
 export function daysLeft(iso: string): number {
   const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

@@ -247,3 +247,14 @@ html.intro-reveal .tabbar { animation: trAppUp .46s cubic-bezier(.2, .7, .2, 1) 
 html.intro-reveal:not(.intro-landed) .vx-orbbtn { opacity: 0; }
 @keyframes trAppUp { from { opacity: 0; transform: translateY(16px); filter: blur(4px); } }
 @keyframes trAppDown { from { opacity: 0; transform: translateY(-10px); filter: blur(4px); } }
+
+/* ---------- closed-test notice: a quiet pill all along, a clear line before "Start talking" ---------- */
+.tu-test { position: absolute; z-index: 4; left: 0; right: 0; margin: 0 auto; width: fit-content; top: calc(env(safe-area-inset-top, 0px) + 62px); display: inline-flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 6px 13px; border-radius: 999px; font-size: 12.5px; line-height: 1.2; color: rgba(255, 255, 255, .82); background: rgba(255, 255, 255, .09); border: 1px solid rgba(255, 255, 255, .16); backdrop-filter: blur(6px); pointer-events: none; white-space: nowrap; }
+.tu-test i { width: 7px; height: 7px; border-radius: 50%; background: #f2b84b; flex: none; }
+.tu-test span { overflow: hidden; text-overflow: ellipsis; }
+.tu-test .long { display: none; }
+.tu-test .long b { color: #fff; font-weight: 650; }
+.tour[data-step="outro"] .tu-test { white-space: normal; text-align: left; align-items: flex-start; padding: 10px 16px; max-width: min(440px, calc(100% - 28px)); font-size: 13.5px; line-height: 1.4; color: rgba(255, 255, 255, .9); background: rgba(255, 255, 255, .12); }
+.tour[data-step="outro"] .tu-test i { margin-top: 6px; }
+.tour[data-step="outro"] .tu-test .short { display: none; }
+.tour[data-step="outro"] .tu-test .long { display: block; }
