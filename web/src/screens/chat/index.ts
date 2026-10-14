@@ -417,8 +417,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     // no user gesture yet, so no audio: fetch the opener silently and show it as a caption
     const myGen = gen;
     let text = '';
-    try { const res = await streamChat({ persona: p, messages: [], speak: true, opener: true, onText: () => { /* shown at once below */ } }); text = res.noMemory ? '' : res.reply; } catch { /* static greeting */ }
-    if (myGen !== gen || cur !== p || log.msgs.length || log.verdict) return;
+    try { const res = await streamChat({ persona: p, messages: [], speak: true, opener: true, fresh: !greetingFor(p), onText: () => { /* shown at once below */ } }); text = res.noMemory ? '' : res.reply; } catch { /* static greeting */ }
+    if (myGen !== gen || cur?.id !== p.id || log.msgs.length || log.verdict) return;
     const g = text.trim() || greetingFor(p);
     if (!g) return;
     log.msgs.push({ role: 'assistant', content: g }); saveLog(p.id, log);
@@ -445,7 +445,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       await Promise.race([pend, new Promise((r) => setTimeout(r, 9000))]);
       if (myGen === gen) busy = false;
     }
-    if (myGen !== gen || cur !== p || log.msgs.length) { kick(); paintState(); return; }
+    if (myGen !== gen || cur?.id !== p.id || log.msgs.length) { kick(); paintState(); return; }
     await reply(p, { opener: true });
   }
   function showVerdict(v: Verdict) {
@@ -586,7 +586,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
         if (d.action === 'resume') hint = d.resume || 'continue';
       } catch { /* aborted */ }
       busy = false;
-      if (myGen !== gen || cur !== p) return;           // the user talked again meanwhile
+      if (myGen !== gen || cur?.id !== p.id) return;           // the user talked again meanwhile
     }
     sendLog.push({ text, merge: merged, hint, at: Date.now() });
     await reply(p, { resumeHint: hint });
@@ -610,13 +610,13 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     D({ type: 'think' });
     caps.block(rid);
     let n = 0, at = 0;
-    const live = () => myGen === gen && cur === p && !r.cut && !r.cancelled;
+    const live = () => myGen === gen && cur?.id === p.id && !r.cut && !r.cancelled;
     const chunks = ctx.text.chunker((s) => { const start = at; at += s.length; if (live()) speakChunk(r, s, start, `${rid}:${n++}`, myGen); }, 160, 40);
     let replyText = '', verdict: Verdict | null = null, err: any = null, noMemory = false;
     let placed: { target: string; name: string; reason: string } | null = null;
     try {
       const res = await streamChat({
-        persona: p, messages: log.msgs, speak: true, signal: chatCtrl.signal, opener: o.opener,
+        persona: p, messages: log.msgs, speak: true, signal: chatCtrl.signal, opener: o.opener, fresh: o.opener && !greetingFor(p),
         resumeHint: o.resumeHint, webSearch: chatPrefs().webSearch !== false,
         // the persona may phone someone into a group call itself (once per conversation)
         callable: callable(personas.filter((x) => x.id !== p.id)), callsMade: log.calls || 0,
@@ -646,26 +646,28 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     }
     if (!r.cancelled) saveLog(p.id, log);
     lastActAt = Date.now();
-    if (myGen !== gen || cur !== p) return;              // interrupted / switched persona
+    if (myGen !== gen || cur?.id !== p.id) return;              // interrupted / switched persona
     busy = false; chatCtrl = null;
     // opener: nothing remembered (or it failed) -> the static greeting, as before
     if (o.opener && !replyText && (noMemory || (err && err.code !== 'aborted'))) {
       const g = log.msgs.length ? '' : greetingFor(p);
       if (g) { const m: ChatMsg = { role: 'assistant', content: g }; log.msgs.push(m); saveLog(p.id, log); speakText(p, g, m); }
+      else if (dm.state === 'thinking') D({ type: 'quiet' });   // nothing to say: never stay on "Berpikir"
       kick(); paintState();
       return;
     }
     if (err && err.code !== 'aborted' && !replyText) {
       ui.toast(err.message || String(err), { kind: 'bad', title: 'Balasan gagal' });
-      retry = () => { if (!busy && cur === p) reply(p, o); };
+      retry = () => { if (!busy && cur?.id === p.id) reply(p, o); };
     }
-    if (verdict) { await player.waitIdle(60000); if (cur === p) showVerdict(verdict); }
+    if (!replyText && !verdict && !placed && dm.state === 'thinking') D({ type: 'quiet' });   // an empty / failed reply must not leave "Berpikir" on
+    if (verdict) { await player.waitIdle(60000); if (cur?.id === p.id) showVerdict(verdict); }
     const call = placed as { target: string; name: string; reason: string } | null;
     if (call && !verdict) {
       // "hold on, I'm calling X": once the line is heard, the chat becomes a group call (the persona stays on the line)
       log.calls = (log.calls || 0) + 1; saveLog(p.id, log);
       await player.waitIdle(30000);
-      if (myGen === gen && cur === p && personas.some((x) => x.id === call.target)) { goCall(call.target, { with: p, caller: p.id }); return; }
+      if (myGen === gen && cur?.id === p.id && personas.some((x) => x.id === call.target)) { goCall(call.target, { with: p, caller: p.id }); return; }
     }
     kick(); paintState();
   }

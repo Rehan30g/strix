@@ -366,6 +366,8 @@ const chatBody = z.object({
   memoryId: z.string().max(64).optional().nullable(),
   // no user message: the persona opens a new conversation itself from what it remembers
   opener: z.boolean().optional(),
+  // opener with nothing remembered AND no static greeting on the client: write a first-meeting opening line instead of {noMemory}
+  fresh: z.boolean().optional(),
   tools: z.object({ web: z.boolean().optional() }).optional().nullable(),
   resumeHint: z.enum(['continue', 'rephrase', 'drop']).optional().nullable(),
   // call_persona: who this persona may phone into a call (server/duo.ts) and how many calls it already placed here
@@ -440,7 +442,7 @@ export async function llmRoutes(app: FastifyInstance) {
     const memName = char ? (String(b.charName ?? '').replace(/[^\p{L}\p{N}\s.'-]/gu, '').trim().slice(0, 30) || char.nick) : custom?.name || 'the character';
     const mem = memId ? memoryContext(req.user!.id, memId, memName) : null;
     // opener with nothing remembered: the client shows its static greeting (no LLM call, nothing charged)
-    if (opener && !mem?.has) return { noMemory: true };
+    if (opener && !mem?.has && !b.fresh) return { noMemory: true };
     const tools: string[] = opener ? [] : (char?.tools ?? custom?.tools ?? []).filter((n) => n in toolDefs); // function tools besides web_search
     const noFewShot = !!char?.noFewShot || tools.length > 0;
     // every persona can hang up when it has truly had enough (interviewers already have end_interview for that);
@@ -496,7 +498,7 @@ export async function llmRoutes(app: FastifyInstance) {
       const lang = mirror && mem?.lang && !isEnglish(mem.lang) ? ` I usually speak ${mem.lang}: open in ${mem.lang}.` : !english ? ` Speak ${language}.` : '';
       history.push({
         role: 'user',
-        content: `(Stage direction, not a line of mine: the call has just connected and you pick up; I have not said anything yet. You speak first: say your opening line now, out loud, as ${memName}, in the mood you are still in from last time (see WHAT YOU REMEMBER). ONE short line, 3-15 words${tags ? ', with one or two lowercase [audio tags] that fit your feeling' : ''}.${lang} If you hung up on me a short while ago and are still upset, be cold, clipped or wary, not cheerful, and do not hang up on this first line. If it ended well, be warm in your own way and you may touch on something from last time in a few words. If it has been days, you may notice it has been a while. No summary of the past, no list of questions.)`,
+        content: `(Stage direction, not a line of mine: the call has just connected and you pick up; I have not said anything yet. You speak first: say your opening line now, out loud, as ${memName}, in the mood you are still in from last time (see WHAT YOU REMEMBER); if you remember nothing about me, this is the first time we talk: just open in your own voice, a short hello that fits who you are, and do not refer to any earlier conversation. ONE short line, 3-15 words${tags ? ', with one or two lowercase [audio tags] that fit your feeling' : ''}.${lang} If you hung up on me a short while ago and are still upset, be cold, clipped or wary, not cheerful, and do not hang up on this first line. If it ended well, be warm in your own way and you may touch on something from last time in a few words. If it has been days, you may notice it has been a while. No summary of the past, no list of questions.)`,
       });
     }
     if (!history.length) return reply.code(400).send({ error: 'validation', message: 'messages kosong' });

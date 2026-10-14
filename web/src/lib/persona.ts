@@ -232,6 +232,8 @@ export async function streamChat(a: {
   onTool?: (t: ToolEvent) => void; resumeHint?: 'continue' | 'rephrase' | 'drop'; webSearch?: boolean;
   /** the persona opens a new conversation itself from its memory (no messages); `noMemory` = use the static greeting */
   opener?: boolean;
+  /** with `opener`: this persona has no static greeting, so the server writes a first-meeting opening line when nothing is remembered */
+  fresh?: boolean;
   /** false = no cross-conversation memory (the intro tour's demo line) */
   memory?: boolean;
   /** who this persona may phone into a group call (tool call_persona) and how many calls it already placed */
@@ -245,7 +247,7 @@ export async function streamChat(a: {
   await api.sse('/chat', {
     ...(p.builtin ? { characterId: p.id } : { persona: { name: p.name, description: p.custom!.description, accent: cleanAccent(p.accent), language: langName(p.lang) } }),
     ...(a.memory === false ? {} : { memoryId: p.id }),   // cross-conversation memory (built-in id or this custom persona's id)
-    ...(a.opener ? { opener: true } : {}),
+    ...(a.opener ? { opener: true, ...(a.fresh ? { fresh: true } : {}) } : {}),
     messages,
     audioTags: a.speak,
     ...(p.lang === AUTO ? {} : { language: langName(p.lang) }),
