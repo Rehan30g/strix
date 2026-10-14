@@ -258,3 +258,6 @@ html.intro-reveal:not(.intro-landed) .vx-orbbtn { opacity: 0; }
 .tour[data-step="outro"] .tu-test i { margin-top: 6px; }
 .tour[data-step="outro"] .tu-test .short { display: none; }
 .tour[data-step="outro"] .tu-test .long { display: block; }
+
+/* narrow screens: the voice map has its own controls along the top, so the pill steps aside on that step */
+@media (max-width: 640px) { .tour[data-step="voices"] .tu-test { display: none; } }
