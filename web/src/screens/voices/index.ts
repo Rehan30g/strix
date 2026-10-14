@@ -385,7 +385,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       h('div', { class: 'add-tiles' }, addFileBtn, recTile), sampleList, fileInput),
     h('details', { class: 'disclosure' }, h('summary', null, h('span', null, 'Lanjutan'), h('small', null, 'Deskripsi')), h('div', { class: 'disc-b' }, field('Deskripsi', desc))),
     h('label', { class: 'check consent' }, consent,
-      h('span', null, 'Ini suaraku sendiri, atau aku punya izin dari pemiliknya. Aku tidak akan memakainya untuk menipu atau meniru orang lain.',
+      h('span', null, 'Ini suaraku sendiri, suara yang aku punya izinnya, atau suara karakter yang kupakai untuk bersenang-senang. Tidak untuk tujuan komersial, melanggar hak cipta, atau menipu orang.',
         h('small', null, 'Wajib. Clone bisa dihapus kapan saja.'))),
     cloneMsg, progress, submit);
   const cloneView = h('div', { class: 'page-inner' }, form);

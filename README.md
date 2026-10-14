@@ -60,7 +60,7 @@ Proyek ini dibuat sebagai eksperimen pribadi. Bagian yang sudah teruji dan yang 
 
 ### 📚 Library suara dan clone suara
 - Jelajahi seluruh **Voice Library publik ElevenLabs** (sekitar 19 ribu suara) dengan pencarian, filter, dan pratinjau. Tambahkan yang kamu suka ke koleksimu.
-- **Clone suaramu sendiri** dari 1 sampai 3 sampel. Wajib mencentang persetujuan, dan hanya untuk suaramu sendiri atau suara yang kamu punya izinnya.
+- **Clone suaramu sendiri** dari 1 sampai 3 sampel. Wajib mencentang persetujuan, dan boleh untuk suaramu sendiri, suara yang kamu punya izinnya, atau suara karakter, asal bukan untuk tujuan komersial atau melanggar hak cipta.
 
 ### 🌌 Tur 3D untuk pengguna baru
 - Pertama kali masuk, kamu melihat catatan "Tentang uji coba", lalu tur singkat yang dinarasikan Strix: empat panel aplikasi yang dilalui kamera 3D, dengan satu aksi kecil di tiap langkah dan peta suara yang bisa digeser dan di-zoom. Tidak ada timer. Kamu yang menentukan kapan lanjut.
@@ -215,7 +215,7 @@ Semua lewat variabel lingkungan. Daftar lengkap dan nilai bawaannya ada di [`.en
 
 **Menghapus ingatan:** buka menu persona, pilih **Ingatan**, lalu **Lupakan semuanya**. Kabar yang beredar antarpersona bisa dihapus terpisah. Menghapus persona buatan ikut menghapus ingatannya.
 
-**Clone suara** hanya untuk suaramu sendiri atau suara yang kamu punya izinnya. Tanpa centang persetujuan, server menolak. Setelah uji coba, admin menghapus clone para penguji dari akun ElevenLabs ([langkahnya](deploy/deploy.md#8-taking-the-preview-down)).
+**Clone suara** boleh untuk suaramu sendiri, suara yang kamu punya izinnya, atau suara karakter, asal bukan untuk tujuan komersial atau melanggar hak cipta. Tanpa centang persetujuan, server menolak. Setelah uji coba, admin menghapus clone para penguji dari akun ElevenLabs ([langkahnya](deploy/deploy.md#8-taking-the-preview-down)).
 
 **Klip narasi tur** (`web/public/intro/t_*.mp3`, `r_*.mp3`, `tts_*.mp3`, `vc_out.mp3`) dibuat dengan clone suara pribadi, jadi sengaja tidak disertakan. Kalau mau, buat sendiri dengan suara yang boleh kamu pakai, lalu taruh di jalur yang sama. Nama, durasi, dan waktu tiap kata ada di `tour.json`.
 

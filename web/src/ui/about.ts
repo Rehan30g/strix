@@ -56,7 +56,7 @@ export function openAbout(opts: { testEnd: string; first?: boolean }): Promise<v
       li('shield', 'Hanya untuk pengundang dan penguji. Ini uji coba tertutup, bisa berubah atau rusak tanpa pemberitahuan.'),
       li('chat', 'Persona dan suaranya dibuat oleh AI. Jangan bagikan data pribadi yang sensitif.'),
       li('info', 'Yang tersimpan di server: emailmu, teks yang kamu ubah jadi suara, dan ringkasan ingatan percakapan. Ingatan bisa dihapus lewat menu persona.'),
-      li('mic', 'Clone suara hanya untuk suaramu sendiri atau suara yang kamu punya izinnya.')),
+      li('mic', 'Clone suara boleh untuk suaramu sendiri, suara yang kamu punya izinnya, atau suara karakter, asal bukan untuk tujuan komersial atau melanggar hak cipta.')),
     h('a', { class: 'about-repo', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', html: svg('external') },
       h('div', null, h('span', null, 'Kode sumber di GitHub'), h('small', null, 'github.com/Rehan30g/strix · lisensi MIT'))));
   const ok = h('button', { type: 'button', class: 'btn primary lg block' }, opts.first ? 'Mengerti, lanjut' : 'Tutup') as HTMLButtonElement;
