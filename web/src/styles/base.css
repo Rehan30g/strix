@@ -44,3 +44,4 @@ html { overscroll-behavior: none; }
 .page { touch-action: pan-y pinch-zoom; }
 .tag-row, .seg, .table-wrap, .tag-row *, .seg *, .table-wrap * { touch-action: auto; }
 
+.ic.ic-logo { fill: currentColor; stroke: none; }
