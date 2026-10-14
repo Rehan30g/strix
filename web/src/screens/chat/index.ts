@@ -36,6 +36,7 @@ import { commitMemory, getMemory, forgetMemory, forgetShared, moodText, agoText,
 import { callable } from '../../lib/duo';
 import { pickPersona } from '../duo/picker';
 import './chat.css';
+import { isHeld, whenReleased } from '../../lib/hold';
 
 /** No activity for this long = the conversation is idle: what was said goes to the persona's memory. */
 const IDLE_COMMIT_MS = 5 * 60_000;
@@ -413,6 +414,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   /** A new conversation: the persona opens it itself from what it remembers (/chat opener), or with its static
       greeting when it remembers nothing (or the opener fails). */
   async function greet(p: Persona) {
+    if (isHeld()) { const g0 = gen; await whenReleased(); if (g0 !== gen || cur?.id !== p.id || log.msgs.length || log.verdict) return; }
     if ((navigator as any).userActivation?.hasBeenActive) { await reply(p, { opener: true }); return; }
     // no user gesture yet, so no audio: fetch the opener silently and show it as a caption
     const myGen = gen;

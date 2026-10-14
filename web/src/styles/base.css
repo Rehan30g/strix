@@ -45,3 +45,4 @@ html { overscroll-behavior: none; }
 .tag-row, .seg, .table-wrap, .tag-row *, .seg *, .table-wrap * { touch-action: auto; }
 
 .ic.ic-logo { fill: currentColor; stroke: none; }
+html.intro-hold #app > :not(.tour) { visibility: hidden; }

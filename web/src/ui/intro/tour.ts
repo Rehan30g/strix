@@ -18,6 +18,7 @@
    each orb is a perfect circle at the projected position of its slot, whatever the panel's tilt.
    End: "Start talking" -> Strix's orb flies into the Chat orb while the stage dissolves (the match cut). */
 import './tour.css';
+import '../../screens/chat/chat.css';   // the Chat panel reuses the chat screen's classes; do not rely on that chunk having loaded
 import { h } from '../dom';
 import { svg } from '../../icons';
 import { customOrb, defaultVoiceOrb, personaOrb, hexToRgb, type OrbEl, type OrbSpec, type Rgb } from '../orb';
