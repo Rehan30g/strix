@@ -6,7 +6,6 @@ speak.example.com {
 	# SSE (/api/chat) and streamed TTS audio must not be buffered
 	reverse_proxy 127.0.0.1:3000 {
 		flush_interval -1
-		header_up X-Forwarded-Host {host}
 	}
 
 	# uploads: voice clone 3 files x MAX_CLONE_UPLOAD_MB (10), Voice Changer 1 x MAX_VC_UPLOAD_MB (15), + form overhead

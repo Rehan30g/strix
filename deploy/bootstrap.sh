@@ -169,7 +169,6 @@ $DOMAIN {
 	# SSE (/api/chat, /api/duo/turn) and streamed TTS audio must not be buffered
 	reverse_proxy 127.0.0.1:3000 {
 		flush_interval -1
-		header_up X-Forwarded-Host {host}
 	}
 	request_body {
 		max_size 40MB
@@ -181,8 +180,10 @@ $DOMAIN {
 }
 EOF
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# validate ran as root and may have created the log file as root: the caddy service user must own it
+chown -R caddy:caddy /var/log/caddy
 systemctl enable caddy >/dev/null 2>&1 || true
-systemctl reload caddy 2>/dev/null || systemctl restart caddy
+systemctl restart caddy
 
 say "firewall (22, 80, 443 only)"
 ufw default deny incoming >/dev/null
@@ -196,7 +197,7 @@ systemctl enable --now fail2ban >/dev/null 2>&1 || true
 say "limited sudo for $DEPLOY_USER (restart strix, reload caddy, read logs: nothing else)"
 SUDOERS=/etc/sudoers.d/strix-deploy
 cat > "$SUDOERS.tmp" <<EOF
-$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart strix, /usr/bin/systemctl start strix, /usr/bin/systemctl stop strix, /usr/bin/systemctl status strix, /usr/bin/systemctl reload caddy, /usr/bin/journalctl -u strix *, /usr/bin/journalctl -u caddy *
+$DEPLOY_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart strix, /usr/bin/systemctl start strix, /usr/bin/systemctl stop strix, /usr/bin/systemctl status strix, /usr/bin/systemctl reload caddy, /usr/bin/systemctl restart caddy, /usr/bin/systemctl start caddy, /usr/bin/systemctl status caddy, /usr/bin/journalctl -u strix *, /usr/bin/journalctl -u caddy *
 EOF
 chmod 440 "$SUDOERS.tmp"
 visudo -cf "$SUDOERS.tmp" >/dev/null && mv "$SUDOERS.tmp" "$SUDOERS" || { rm -f "$SUDOERS.tmp"; echo "sudoers check failed, not installed"; exit 1; }
