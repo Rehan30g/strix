@@ -8,6 +8,7 @@ import { store } from '../store';
 import { api, resetText, type Me } from '../api';
 import { settings } from '../settings';
 import { setTheme, themePref } from '../theme';
+import { fmtEndDate, leftLabel } from './about';
 
 const fmtSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} mnt${s % 60 ? ` ${Math.round(s % 60)} dtk` : ''}` : `${Math.round(s)} dtk`);
 
@@ -53,6 +54,8 @@ export function openAccount(onLogout: () => void): void {
   const logout = h('button', { type: 'button', class: 'btn danger-soft block', html: svg('logout') }, 'Keluar');
   const adminLink = me.user.isAdmin ? h('a', { class: 'acct-link', href: '#/admin', html: svg('shield') }, h('span', null, 'Panel admin'), h('span', { html: svg('chevronRight'), style: 'display:contents' })) : null;
 
+  const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '');
+  const aboutLink = h('button', { type: 'button', class: 'acct-link', html: svg('info') }, h('span', null, 'Tentang uji coba', endIso ? h('small', { class: 'acct-sub' }, `Ditutup ${fmtEndDate(endIso)} · ${leftLabel(endIso)}`) : null), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const introLink = h('button', { type: 'button', class: 'acct-link', html: svg('sparkle') }, h('span', null, 'Tur singkat'), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const body = h('div', { class: 'acct' },
     h('div', { class: 'acct-head' }, avatar(me.user.name || me.user.email, me.user.picture, 'lg'),
@@ -61,11 +64,13 @@ export function openAccount(onLogout: () => void): void {
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Tema')), theme),
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Suara')), level),
     adv,
+    aboutLink,
     introLink,
     adminLink,
     logout);
 
   const m = modal({ title: 'Akun', body, cls: 'acct-dlg' });
+  aboutLink.onclick = () => { m.close(); import('./about').then((x) => x.openAbout({ testEnd: endIso || '2026-10-20' })).catch(() => {}); };
   introLink.onclick = () => { m.close(); import('./intro').then((x) => x.openIntro()).catch(() => {}); };
   if (adminLink) adminLink.addEventListener('click', () => m.close());
   logout.onclick = async () => { m.close(); try { await api.logout(); } catch { /* ignore */ } onLogout(); };

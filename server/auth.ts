@@ -166,6 +166,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/api/auth/config', { config: { access: 'public' } }, async () => ({
     google: googleConfigured(),
     devLogin: config.devFakeLogin,
+    testEnd: config.testEnd,
   }));
 
   app.get('/api/auth/google/start', { config: { access: 'public', rateLimit: authRate } }, async (_req, reply) => {

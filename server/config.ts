@@ -44,6 +44,8 @@ export const config = {
   port,
   host: env.HOST || (isProd ? '127.0.0.1' : '0.0.0.0'),
   publicUrl: (env.PUBLIC_URL || `http://localhost:${port}`).replace(/\/+$/, ''),
+  /** Day (YYYY-MM-DD) this closed test ends; only shown to users (login line, "about" notice, account sheet). */
+  testEnd: /^\d{4}-\d{2}-\d{2}$/.test((env.TEST_END_DATE ?? '').trim()) ? (env.TEST_END_DATE as string).trim() : '2026-10-20',
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
   dbFile: path.resolve(ROOT, env.DB_FILE || 'data/app.db'),
   webDist: path.resolve(ROOT, env.WEB_DIST || 'web/dist'),

@@ -2,6 +2,7 @@
 import { h, btn, busy } from '../ui/dom';
 import { svg } from '../icons';
 import { api, ApiError, type Me } from '../api';
+import { fmtEndDate } from '../ui/about';
 
 const brand = () => h('div', { class: 'auth-mark', html: svg('waveform'), 'aria-hidden': 'true' });
 
@@ -30,8 +31,10 @@ export function renderLogin(root: HTMLElement): void {
   const err = loginError();
   const g = h('a', { class: 'gbtn', href: '/api/auth/google/start', html: svg('google') }, 'Masuk dengan Google');
   const extra = h('div');
+  const endLine = h('p', { class: 'auth-end' });
   // dev-only fake login + "Google not configured" notice (GET /api/auth/config is public)
-  api.get<{ google: boolean; devLogin: boolean }>('/auth/config').then((c) => {
+  api.get<{ google: boolean; devLogin: boolean; testEnd?: string }>('/auth/config').then((c) => {
+    if (c.testEnd) endLine.textContent = `Uji coba tertutup · berakhir ${fmtEndDate(c.testEnd)}`;
     if (!c.google) extra.append(h('div', { class: 'notice warn', style: 'margin-top:12px', html: svg('alert') }, h('span', null, 'Login Google belum dikonfigurasi di server.')));
     if (c.devLogin) {
       const email = h('input', { class: 'input', type: 'email', placeholder: 'dev@example.com', 'aria-label': 'Email dev', autocomplete: 'off' }) as HTMLInputElement;
@@ -46,13 +49,10 @@ export function renderLogin(root: HTMLElement): void {
     h('div', { class: 'auth-card' },
       brand(),
       h('h1', null, 'Strix'),
-      h('p', { class: 'lead' }, 'Ngobrol dengan persona AI, ubah teks jadi suara, ubah suaramu, dan clone suara sendiri.'),
-      h('ul', { class: 'auth-feats' },
-        ...[['chat', 'Chat persona'], ['studio', 'Teks ke suara'], ['changer', 'Voice changer'], ['voices', 'Clone suara']]
-          .map(([i, t]) => h('li', { html: svg(i) }, t))),
+      endLine,
       err ? h('div', { class: 'notice bad', style: 'margin-bottom:14px', html: svg('alert') }, h('span', null, err)) : null,
       g, extra,
-      h('p', { class: 'foot' }, 'Khusus undangan. Setelah masuk, masukkan kode undangan dari admin.'))));
+      h('p', { class: 'foot' }, 'Khusus undangan.'))));
 }
 
 export function renderRedeem(root: HTMLElement, me: Me, onDone: () => void, onLogout: () => void): void {

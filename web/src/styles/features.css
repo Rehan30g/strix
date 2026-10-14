@@ -60,3 +60,27 @@ html.intro-open .toasts { z-index: 210; }
 /* the intro itself is the trailer: styles in ui/intro/trailer.css (lazy chunk) */
 
 button.acct-link { width: 100%; background: transparent; text-align: left; }
+
+/* ---------- login: one quiet line, no explanation ---------- */
+.auth-end { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+.auth-end:empty { display: none; }
+
+/* ---------- "Tentang uji coba" notice ---------- */
+.about { display: grid; gap: 16px; }
+.about-end { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: var(--r-md); background: var(--accent-soft); border: 1px solid var(--border); }
+.about-end .ic { width: 22px; height: 22px; flex: none; margin-top: 1px; color: var(--accent); }
+.about-end b { display: block; font-size: 16px; line-height: 1.35; }
+.about-end span { display: block; margin-top: 2px; color: var(--fg-2); font-size: 14px; }
+.about-end.soon { background: var(--warn-soft, var(--accent-soft)); }
+.about-end.soon .ic { color: var(--warn, var(--accent)); }
+.about-end.over { background: var(--surface-2); }
+.about-lead { margin: 0; font-size: 15.5px; line-height: 1.55; color: var(--fg); }
+.about-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.about-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 14.5px; line-height: 1.5; color: var(--fg-2); }
+.about-list li .ic { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--muted); }
+.about-repo { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; border-radius: var(--r-md); border: 1px solid var(--border); color: var(--fg); text-decoration: none; }
+.about-repo .ic { width: 18px; height: 18px; flex: none; color: var(--muted); }
+.about-repo div { min-width: 0; }
+.about-repo span { display: block; font-weight: 600; }
+.about-repo small { display: block; color: var(--muted); font-weight: 400; }
+.acct-sub { display: block; font-weight: 400; font-size: 12.5px; color: var(--muted); margin-top: 1px; }

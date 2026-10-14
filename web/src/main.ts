@@ -48,11 +48,17 @@ async function boot() {
   // theme from synced prefs (server wins once synced)
   setTheme(settings.prefs().theme);
   const synced = settings.sync(['prefs', 'tune']).then(() => { setTheme(settings.prefs().theme); refreshOrbs(); });
-  loadConfig().catch(() => {});
+  const cfgP = loadConfig().catch(() => null);
   if (phase !== 'app') {
     phase = 'app'; leaveApp(); teardown = mountShell(root, toLogin);
     // first visit: animated intro (decided after the server settings arrive, so another device's "onboarded" counts)
-    Promise.race([synced.catch(() => {}), new Promise((r) => setTimeout(r, 2500))]).then(() => {
+    Promise.race([synced.catch(() => {}), new Promise((r) => setTimeout(r, 2500))]).then(async () => {
+      if (phase !== 'app') return;
+      // first thing a new person sees: what this is and when the closed test ends (then the tour)
+      try {
+        const about = await import('./ui/about');
+        if (!about.isAboutSeen()) { const cfg = await cfgP; await about.openAbout({ testEnd: String(cfg?.testEnd || '2026-10-20'), first: true }); }
+      } catch (e) { console.warn('about notice failed', e); /* the notice must never block the app */ }
       if (phase === 'app' && settings.get<boolean>('onboarded', false) !== true) import('./ui/intro').then((m) => m.openIntro({ mandatory: true })).catch(() => {});
     });
   }

@@ -392,6 +392,7 @@ export async function llmRoutes(app: FastifyInstance) {
       decisionModel: config.decisionModel, // turn-taking model for /api/chat/decide (read-only info)
       ttsModel: config.ttsModel,
       stsModel: config.stsModel,
+      testEnd: config.testEnd,
       limits: {
         llmReqPerDay: l.llmReqPerDay,
         ttsCharsPerDay: l.ttsCharsPerDay,
