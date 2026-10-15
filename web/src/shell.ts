@@ -10,6 +10,7 @@ import { openAccount } from './ui/account';
 import { inbox, onInbox, refreshMessages } from './lib/inbox';
 import { drag, rubber, settle, haptic } from './ui/gesture';
 import { enter, leave } from './ui/transition';
+import { t } from './i18n';
 
 /** Reload once (not in a loop) when a lazy chunk is gone; true = reloading. */
 function staleReload(): boolean {
@@ -33,7 +34,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
   };
   const acctButtons: HTMLButtonElement[] = [];
   const accountButton = () => {
-    const b = h('button', { class: 'acct-btn', type: 'button', 'aria-label': 'Akun dan pengaturan', 'aria-haspopup': 'dialog' });
+    const b = h('button', { class: 'acct-btn', type: 'button', 'aria-label': t('Akun dan pengaturan'), 'aria-haspopup': 'dialog' });
     b.onclick = () => openAccount(onLogout);
     acctButtons.push(b);
     paintAccount();
@@ -45,8 +46,8 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
   const messageButton = (cls: string) => {
     const badge = h('i', { class: 'msg-dot', hidden: true, 'aria-hidden': 'true' });
     const a = (cls === 'side-msg'
-      ? h('a', { class: 'side-item side-msg', href: '#/messages', hidden: true }, h('span', { class: 'nav-ic', html: svg('message') }, badge), h('span', { class: 'nav-l' }, 'Pesan'))
-      : h('a', { class: 'msg-btn ' + cls, href: '#/messages', title: 'Pesan', hidden: true, html: svg('message') }, badge)) as HTMLAnchorElement;
+      ? h('a', { class: 'side-item side-msg', href: '#/messages', hidden: true }, h('span', { class: 'nav-ic', html: svg('message') }, badge), h('span', { class: 'nav-l' }, t('Pesan')))
+      : h('a', { class: 'msg-btn ' + cls, href: '#/messages', title: t('Pesan'), hidden: true, html: svg('message') }, badge)) as HTMLAnchorElement;
     msgButtons.push(a);
     (navLinks.get('messages') || navLinks.set('messages', []).get('messages')!).push(a);
     return a;
@@ -57,22 +58,22 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
       const dot = a.querySelector('.msg-dot') as HTMLElement;
       dot.hidden = !inbox.unread;
       dot.textContent = inbox.unread > 9 ? '9+' : String(inbox.unread || '');
-      a.setAttribute('aria-label', inbox.unread ? `Pesan, ${inbox.unread} belum dibaca` : 'Pesan');
+      a.setAttribute('aria-label', inbox.unread ? t('Pesan, {n} belum dibaca', { n: inbox.unread }) : t('Pesan'));
     }
   };
   const unInbox = onInbox(paintInbox);
   void refreshMessages();
   const inboxTimer = setInterval(() => { if (!document.hidden) void refreshMessages(); }, 60000);
-  const side = h('nav', { class: 'side', 'aria-label': 'Navigasi utama' },
+  const side = h('nav', { class: 'side', 'aria-label': t('Navigasi utama') },
     h('a', { class: 'side-brand', href: '#/' + DEFAULT_ROUTE, 'aria-label': 'Strix', html: svg('waveform') }),
     h('div', { class: 'side-items' }, ...tabs.map((r) => link(r, 'side-item'))),
     h('div', { class: 'spacer' }),
     messageButton('side-msg'),
     accountButton());
-  const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Navigasi' }, ...tabs.map((r) => link(r, 'tab')));
+  const tabbar = h('nav', { class: 'tabbar', 'aria-label': t('Navigasi') }, ...tabs.map((r) => link(r, 'tab')));
 
   /* ---------- top bar ---------- */
-  const back = h('button', { class: 'tb-back', type: 'button', 'aria-label': 'Kembali', html: svg('arrowLeft'), hidden: true });
+  const back = h('button', { class: 'tb-back', type: 'button', 'aria-label': t('Kembali'), html: svg('arrowLeft'), hidden: true });
   const title = h('h1', { class: 'tb-title' });
   const actions = h('div', { class: 'tb-actions' });
   const topAcct = accountButton(); topAcct.classList.add('tb-acct');
@@ -139,7 +140,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
   let backFn: (() => void) | null = null;
   back.onclick = () => backFn?.();
   const shellApi: ShellApi = {
-    setTitle: (t) => { title.textContent = t; document.title = t === 'Strix' ? 'Strix' : `${t} · Strix`; },
+    setTitle: (s) => { title.textContent = s; document.title = s === 'Strix' ? 'Strix' : `${s} · Strix`; },
     setActions: (nodes) => actions.replaceChildren(...nodes),
     setBack: (fn) => { backFn = fn; back.hidden = !fn; topbar.classList.toggle('has-back', !!fn); },
     setTopbar: (v) => app.classList.toggle('no-topbar', !v),
@@ -153,7 +154,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
     const info = parseHash();
     let def = ROUTES.find((r) => r.name === info.name);
     if (!def || (def.admin && !isAdmin())) {
-      if (def?.admin) toast('Halaman ini hanya untuk admin.', { kind: 'warn' });
+      if (def?.admin) toast(t('Halaman ini hanya untuk admin.'), { kind: 'warn' });
       history.replaceState(null, '', '#/' + DEFAULT_ROUTE);
       def = ROUTES.find((r) => r.name === DEFAULT_ROUTE)!;
       info.name = def.name; info.path = def.name; info.params = new URLSearchParams();
@@ -189,7 +190,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
       console.error(e);
       // a tab opened before a deploy still points at chunks that no longer exist: fetch the fresh build once
       if (staleReload()) return;
-      view.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, 'Gagal memuat halaman'), h('p', null, 'Periksa koneksi lalu muat ulang.')));
+      view.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, t('Gagal memuat halaman')), h('p', null, t('Periksa koneksi lalu muat ulang.'))));
       return;
     }
     if (my !== token) return;
@@ -204,7 +205,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
       else if (r) { cleanup = r.cleanup; onRoute = r.onRoute || null; }
     } catch (e) {
       console.error(e);
-      screen.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, 'Terjadi kesalahan'), h('p', null, String((e as Error).message || e))));
+      screen.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, t('Terjadi kesalahan')), h('p', null, String((e as Error).message || e))));
     }
   }
   let lastKey = '';

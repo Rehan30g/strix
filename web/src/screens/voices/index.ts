@@ -8,6 +8,7 @@
 import type { RouteInfo, ScreenCtx } from '../../ctx';
 import type { Voice, LibraryPage, LibraryQuery, LibraryVoice, LibraryWarning } from '../../api';
 import { h, onDisconnect } from '../../ui/dom';
+import { locale } from '../../i18n';
 import { field, seg } from '../../ui/controls';
 import { voiceMeta, shortName, voiceOrbButton } from '../../ui/voicepicker';
 import { flyOrb } from '../../ui/transition';
@@ -325,7 +326,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function paintLib(mode: 'full' | 'cards' | 'foot' = 'cards') {
     if (view !== 'library') return;
     if (mode === 'full') layoutLib(); else if (mode === 'cards') refreshAllCards();
-    libInfo.textContent = libErr || (!lib.length && libBusy) ? '' : libTotal != null ? `${libTotal.toLocaleString('id-ID')} suara di Voice Library ElevenLabs` : lib.length ? `${lib.length.toLocaleString('id-ID')} suara dimuat` : '';
+    libInfo.textContent = libErr || (!lib.length && libBusy) ? '' : libTotal != null ? `${libTotal.toLocaleString(locale())} suara di Voice Library ElevenLabs` : lib.length ? `${lib.length.toLocaleString(locale())} suara dimuat` : '';
     const foot: Node[] = [];
     if (!lib.length && libBusy) foot.push(h('div', { class: 'lib-skel' }, ...Array.from({ length: 6 }, () => h('div', { class: 'lib-card' }, h('span', { class: 'skel', style: 'width:52px;height:52px;border-radius:50%' }), h('div', { class: 'v-t' }, h('span', { class: 'skel', style: 'height:14px;width:50%' }), h('span', { class: 'skel', style: 'height:12px;width:70%;margin-top:6px' }))))));
     else if (libErr) foot.push(h('div', { class: 'notice bad', html: S('alert') }, h('span', null, libErr), ui.btn({ label: 'Coba lagi', cls: 'sm ghost', onClick: () => loadLib(!lib.length) })));

@@ -1,0 +1,15 @@
+/* UI language switch (ui/langswitch.ts) */
+.lang-seg button .spinner, .lang-quiet button .spinner { width: 14px; height: 14px; }
+.lang-seg.busy button, .lang-quiet.busy button { cursor: progress; }
+
+/* quiet variant: under the login card, two small text buttons */
+.lang-quiet { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 2px; margin-top: 14px; color: var(--muted); font-size: 13px; }
+.lang-quiet .lang-ic { display: inline-grid; place-items: center; color: var(--faint); margin-right: 2px; }
+.lang-quiet .lang-ic .ic { width: 15px; height: 15px; }
+.lang-quiet button { border: 0; background: transparent; color: var(--muted); font: inherit; min-height: 36px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: background .15s, color .15s; }
+.lang-quiet button:hover:not([disabled]) { color: var(--fg); background: var(--surface-2); }
+.lang-quiet button[aria-pressed="true"] { color: var(--fg); font-weight: 600; cursor: default; }
+.lang-quiet button[aria-pressed="true"]:hover { background: transparent; }
+.lang-quiet .lang-dot { color: var(--faint); }
+.lang-quiet button:disabled { opacity: 1; }
+@media (pointer: coarse), (max-width: 640px) { .lang-quiet button { min-height: 44px; } }

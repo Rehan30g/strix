@@ -1,5 +1,6 @@
 /* Cross-conversation memory of chat personas (server: /api/memory, see server/CONTRACT-NOTES.md "Memory").
    Plain fetch on purpose: memory is a background nicety, a failure must stay silent (no global toasts / quota events). */
+import { t, locale } from '../i18n';
 
 export type CommitReason = 'hangup' | 'quit' | 'restart' | 'switch' | 'idle' | 'duo';
 export interface MemoryMood { label: string; intensity: number; intensityNow: number; nowLabel?: string; reason: string; at: string | null }
@@ -79,11 +80,11 @@ export function agoText(iso: string | null): string {
   const ms = Date.now() - Date.parse(iso);
   if (!Number.isFinite(ms)) return '';
   const min = Math.round(ms / 60_000);
-  if (min < 2) return 'baru saja';
-  if (min < 60) return `${min} menit lalu`;
+  if (min < 2) return t('baru saja');
+  if (min < 60) return t('{n} menit lalu', { n: min });
   const h = Math.round(min / 60);
-  if (h < 36) return `${h} jam lalu`;
+  if (h < 36) return h === 1 ? t('1 jam lalu') : t('{n} jam lalu', { n: h });
   const d = Math.round(h / 24);
-  if (d < 14) return `${d} hari lalu`;
-  return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (d < 14) return t('{n} hari lalu', { n: d });
+  return new Date(iso).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' });
 }

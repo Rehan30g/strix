@@ -1,5 +1,6 @@
 /* Fetch wrapper for /api. Handles 401 / 403 / 429 globally (emits events the shell reacts to),
    JSON helpers, raw streaming responses (TTS audio), SSE parsing and multipart upload with progress. */
+import { t, locale, getLang } from './i18n';
 
 export class ApiError extends Error {
   status: number; code: string; data: any;
@@ -14,7 +15,7 @@ export type ApiEvent =
   | { type: 'invite_required' }
   | { type: 'suspended' }
   | { type: 'forbidden'; code: string }
-  | { type: 'quota'; kind: string; resetAt?: string; message: string }
+  | { type: 'quota'; kind: string; resetAt?: string; message: string; notice: string }   // notice = message without the "ask for more" line
   | { type: 'usage' };              // a request that counts against quota finished (refresh the meter)
 
 type Listener = (e: ApiEvent) => void;
@@ -22,61 +23,63 @@ const listeners = new Set<Listener>();
 export function onApiEvent(fn: Listener): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(e: ApiEvent) { for (const l of listeners) { try { l(e); } catch (err) { console.error(err); } } }
 
-export const QUOTA_LABEL: Record<string, string> = { llm: 'chat AI', tts: 'karakter TTS', vc: 'detik Voice Changer', stt: 'detik input suara', search: 'pencarian web', decide: 'keputusan percakapan', clone: 'clone suara', clones: 'clone suara', call: 'panggilan persona', memory: 'ingatan persona' };
+/** What ran out, as it reads inside "Kuota harian {what} habis." (translated; t() at module scope is safe, see i18n.ts). */
+export const QUOTA_LABEL: Record<string, string> = { llm: t('chat AI'), tts: t('karakter TTS'), vc: t('detik Voice Changer'), stt: t('detik input suara'), search: t('pencarian web'), decide: t('keputusan percakapan'), clone: t('clone suara'), clones: t('clone suara'), call: t('panggilan persona'), memory: t('ingatan persona') };
 const MESSAGES: Record<string, string> = {
-  invite_required: 'Akun kamu belum aktif. Masukkan kode undangan dulu.',
-  suspended: 'Akun kamu ditangguhkan. Hubungi admin.',
-  forbidden: 'Kamu tidak punya akses ke fitur ini.',
-  admin_only: 'Hanya admin.',
-  unauthenticated: 'Sesi berakhir. Silakan masuk lagi.',
-  unauthorized: 'Sesi berakhir. Silakan masuk lagi.',
-  code_full: 'Kode ini sudah dipakai sampai batas maksimal.',
-  code_expired: 'Kode ini sudah kedaluwarsa.',
-  code_revoked: 'Kode ini sudah dicabut.',
-  invalid_code: 'Kode tidak ditemukan. Periksa lagi penulisannya.',
-  duplicate_account: 'Email ini sama dengan akun lain yang sudah memakai undangan. Satu orang satu akun.',
-  device_used: 'Perangkat ini sudah dipakai akun lain. Minta kode baru ke pengundang kalau ini orang yang berbeda.',
-  already_redeemed: 'Akun kamu sudah memakai kode undangan lain.',
-  not_found: 'Tidak ditemukan.',
-  voice_forbidden: 'Suara ini belum ada di koleksimu. Tambahkan dulu dari Library (tab Voices).',
-  voice_not_found: 'Suara tidak ditemukan di Library.',
-  not_in_library: 'Suara ini tidak ada di Library.',
-  not_removable: 'Suara ini tidak bisa dihapus dari koleksi.',
-  shared_voice: 'Suara bersama tidak bisa dihapus.',
-  persona_refused: 'Permintaan persona ini tidak bisa dibuat. Coba ide lain.',
-  no_preview: 'Suara ini tidak punya contoh audio.',
-  already_in_collection: 'Suara ini sudah ada di koleksimu.',
-  collection_full: 'Koleksi suaramu sudah penuh. Hapus salah satu dulu.',
-  slots_full: 'Slot suara server penuh. Pilih suara lain yang sudah dipakai, atau minta admin membersihkan slot.',
-  not_addable: 'Suara ini tidak bisa dipakai pada paket akun server.',
-  tts_not_configured: 'Layanan suara (ElevenLabs) belum dikonfigurasi di server.',
-  llm_not_configured: 'Layanan AI (OpenRouter) belum dikonfigurasi di server.',
-  text_too_long: 'Teks terlalu panjang.',
-  consent_required: 'Centang persetujuan dulu.',
-  bad_file_type: 'Jenis file tidak didukung. Pakai file audio.',
-  file_too_large: 'File terlalu besar.',
-  body_too_large: 'Data terlalu besar.',
-  too_large: 'Data terlalu besar.',
-  too_many_files: 'Terlalu banyak file (maksimal 3).',
-  files_required: 'Tambahkan minimal satu sampel audio.',
-  cannot_suspend_self: 'Kamu tidak bisa menangguhkan akunmu sendiri.',
-  bad_origin: 'Permintaan ditolak (origin tidak cocok).',
-  validation: 'Data yang dikirim tidak valid.',
-  rate_limited: 'Terlalu banyak permintaan. Tunggu sebentar.',
-  upstream: 'Layanan eksternal sedang bermasalah. Coba lagi.',
-  internal: 'Terjadi kesalahan di server.',
-  network: 'Tidak bisa terhubung ke server. Periksa koneksi.',
-  audio_too_long: 'Audio terlalu panjang (maksimal 5 menit).',
-  audio_too_short: 'Audio terlalu pendek.',
-  file_required: 'Pilih atau rekam audio dulu.',
-  voice_required: 'Pilih suara target dulu.',
+  invite_required: t('Akun kamu belum aktif. Masukkan kode undangan dulu.'),
+  suspended: t('Akun kamu ditangguhkan. Hubungi admin.'),
+  forbidden: t('Kamu tidak punya akses ke fitur ini.'),
+  admin_only: t('Hanya admin.'),
+  unauthenticated: t('Sesi berakhir. Silakan masuk lagi.'),
+  unauthorized: t('Sesi berakhir. Silakan masuk lagi.'),
+  code_full: t('Kode ini sudah dipakai sampai batas maksimal.'),
+  code_expired: t('Kode ini sudah kedaluwarsa.'),
+  code_revoked: t('Kode ini sudah dicabut.'),
+  invalid_code: t('Kode tidak ditemukan. Periksa lagi penulisannya.'),
+  duplicate_account: t('Email ini sama dengan akun lain yang sudah memakai undangan. Satu orang satu akun.'),
+  device_used: t('Perangkat ini sudah dipakai akun lain. Minta kode baru ke pengundang kalau ini orang yang berbeda.'),
+  already_redeemed: t('Akun kamu sudah memakai kode undangan lain.'),
+  not_found: t('Tidak ditemukan.'),
+  voice_forbidden: t('Suara ini belum ada di koleksimu. Tambahkan dulu dari Library (tab Voices).'),
+  voice_not_found: t('Suara tidak ditemukan di Library.'),
+  not_in_library: t('Suara ini tidak ada di Library.'),
+  not_removable: t('Suara ini tidak bisa dihapus dari koleksi.'),
+  shared_voice: t('Suara bersama tidak bisa dihapus.'),
+  persona_refused: t('Permintaan persona ini tidak bisa dibuat. Coba ide lain.'),
+  no_preview: t('Suara ini tidak punya contoh audio.'),
+  already_in_collection: t('Suara ini sudah ada di koleksimu.'),
+  collection_full: t('Koleksi suaramu sudah penuh. Hapus salah satu dulu.'),
+  slots_full: t('Slot suara server penuh. Pilih suara lain yang sudah dipakai, atau minta admin membersihkan slot.'),
+  not_addable: t('Suara ini tidak bisa dipakai pada paket akun server.'),
+  tts_not_configured: t('Layanan suara (ElevenLabs) belum dikonfigurasi di server.'),
+  llm_not_configured: t('Layanan AI (OpenRouter) belum dikonfigurasi di server.'),
+  text_too_long: t('Teks terlalu panjang.'),
+  consent_required: t('Centang persetujuan dulu.'),
+  bad_file_type: t('Jenis file tidak didukung. Pakai file audio.'),
+  file_too_large: t('File terlalu besar.'),
+  body_too_large: t('Data terlalu besar.'),
+  too_large: t('Data terlalu besar.'),
+  too_many_files: t('Terlalu banyak file (maksimal 3).'),
+  files_required: t('Tambahkan minimal satu sampel audio.'),
+  cannot_suspend_self: t('Kamu tidak bisa menangguhkan akunmu sendiri.'),
+  bad_origin: t('Permintaan ditolak (origin tidak cocok).'),
+  validation: t('Data yang dikirim tidak valid.'),
+  rate_limited: t('Terlalu banyak permintaan. Tunggu sebentar.'),
+  upstream: t('Layanan eksternal sedang bermasalah. Coba lagi.'),
+  internal: t('Terjadi kesalahan di server.'),
+  network: t('Tidak bisa terhubung ke server. Periksa koneksi.'),
+  audio_too_long: t('Audio terlalu panjang (maksimal 5 menit).'),
+  audio_too_short: t('Audio terlalu pendek.'),
+  file_required: t('Pilih atau rekam audio dulu.'),
+  voice_required: t('Pilih suara target dulu.'),
 };
 
+/** When the quota resets, e.g. "Senin 07.00" / "Monday 07:00 AM". */
 export function resetText(resetAt?: string): string {
   if (!resetAt) return '';
   const d = new Date(resetAt);
   if (Number.isNaN(+d)) return '';
-  return d.toLocaleString('id-ID', { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(locale(), { weekday: 'long', hour: '2-digit', minute: '2-digit' });
 }
 
 /** Turn a non-OK response body into an ApiError (and fire the global events). */
@@ -86,11 +89,13 @@ export async function toError(r: Response, path: string): Promise<ApiError> {
   try { data = text ? JSON.parse(text) : null; } catch { data = { error: text.slice(0, 300) }; }
   const rawErr = data?.error;
   const code: string = typeof rawErr === 'string' ? rawErr : (rawErr?.code || data?.code || `http_${r.status}`);
-  let message: string = (code !== 'validation' && typeof data?.message === 'string' && data.message) || (typeof rawErr === 'object' && rawErr?.message) || MESSAGES[code] || (typeof rawErr === 'string' && rawErr) || r.statusText || `HTTP ${r.status}`;
-  if (code === 'text_too_long' && data?.max) message = `Teks terlalu panjang (maksimal ${data.max} karakter).`;
+  // server texts are Indonesian: in English the known codes use the translated message instead
+  const serverMsg = getLang() === 'en' && MESSAGES[code] ? '' : (code !== 'validation' && typeof data?.message === 'string' && data.message) || (typeof rawErr === 'object' && rawErr?.message) || '';
+  let message: string = serverMsg || MESSAGES[code] || (typeof rawErr === 'string' && rawErr) || r.statusText || `HTTP ${r.status}`;
+  if (code === 'text_too_long' && data?.max) message = t('Teks terlalu panjang (maksimal {max} karakter).', { max: data.max });
   if (code === 'voice_forbidden') message = MESSAGES.voice_forbidden;
-  if (code === 'collection_full') message = `Koleksi suaramu sudah penuh${data?.max ? ` (maksimal ${data.max})` : ''}. Hapus salah satu dulu.`;
-  if (code === 'file_too_large' && data?.maxMb)message = `File terlalu besar (maksimal ${data.maxMb} MB per file).`;
+  if (code === 'collection_full') message = data?.max ? t('Koleksi suaramu sudah penuh (maksimal {max}). Hapus salah satu dulu.', { max: data.max }) : MESSAGES.collection_full;
+  if (code === 'file_too_large' && data?.maxMb) message = t('File terlalu besar (maksimal {max} MB per file).', { max: data.maxMb });
   if (r.status === 401) {
     if (!path.startsWith('/me')) emit({ type: 'unauthorized' });
     message = MESSAGES.unauthorized;
@@ -103,8 +108,10 @@ export async function toError(r: Response, path: string): Promise<ApiError> {
     if (code === 'quota') {
       const kind = String(data?.kind || '');
       const when = resetText(data?.resetAt);
-      message = kind === 'clone' ? 'Batas jumlah clone suara untuk akunmu sudah tercapai. Butuh tambahan? Hubungi orang yang mengundangmu.' : `Kuota harian ${QUOTA_LABEL[kind] || kind} habis.${when ? ` Direset ${when}.` : ''} Butuh tambahan? Hubungi orang yang mengundangmu.`;
-      emit({ type: 'quota', kind, resetAt: data?.resetAt, message });
+      const notice = kind === 'clone' ? t('Batas jumlah clone suara untuk akunmu sudah tercapai.')
+        : t('Kuota harian {what} habis.', { what: QUOTA_LABEL[kind] || kind }) + (when ? ' ' + t('Direset {when}.', { when }) : '');
+      message = notice + ' ' + t('Butuh tambahan? Hubungi orang yang mengundangmu.');
+      emit({ type: 'quota', kind, resetAt: data?.resetAt, message, notice });
     } else {
       message = MESSAGES.rate_limited;
     }
@@ -118,8 +125,8 @@ async function rawFetch(path: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch('/api' + path, { credentials: 'same-origin', ...init });
   } catch (e: any) {
-    if (e?.name === 'AbortError') throw new ApiError(0, 'aborted', 'Dibatalkan', null);
-    throw new ApiError(0, 'network', 'Tidak bisa terhubung ke server. Periksa koneksi.', null);
+    if (e?.name === 'AbortError') throw new ApiError(0, 'aborted', t('Dibatalkan'), null);
+    throw new ApiError(0, 'network', MESSAGES.network, null);
   }
 }
 
@@ -187,7 +194,7 @@ export async function readSse(r: Response, opts: SseOpts): Promise<void> {
     }
     if (buf.trim()) flushBlock(buf);
   } catch (e: any) {
-    if (e?.name === 'AbortError' || opts.signal?.aborted) throw new ApiError(0, 'aborted', 'Dibatalkan', null);
+    if (e?.name === 'AbortError' || opts.signal?.aborted) throw new ApiError(0, 'aborted', t('Dibatalkan'), null);
     throw e;
   } finally {
     emit({ type: 'usage' });
@@ -207,8 +214,8 @@ export function upload<T = any>(path: string, form: FormData, opts: { onProgress
       if (x.status >= 200 && x.status < 300) { try { resolve(x.response ? JSON.parse(x.response) : undefined); } catch { resolve(x.response); } }
       else reject(await toError(res, path));
     };
-    x.onerror = () => reject(new ApiError(0, 'network', 'Upload gagal: koneksi terputus.', null));
-    x.onabort = () => reject(new ApiError(0, 'aborted', 'Dibatalkan', null));
+    x.onerror = () => reject(new ApiError(0, 'network', t('Upload gagal: koneksi terputus.'), null));
+    x.onabort = () => reject(new ApiError(0, 'aborted', t('Dibatalkan'), null));
     opts.signal?.addEventListener('abort', () => x.abort(), { once: true });
     x.send(form);
   });

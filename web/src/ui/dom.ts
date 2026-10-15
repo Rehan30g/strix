@@ -1,5 +1,6 @@
 /* Tiny DOM helpers. All user/AI text goes through textContent (never innerHTML). */
 import { svg } from '../icons';
+import { t, locale } from '../i18n';
 
 type Child = Node | string | number | null | undefined | false | Child[];
 export type Attrs = Record<string, unknown> & {
@@ -114,20 +115,20 @@ export function onDisconnect(el: Element, fn: () => void): void {
   }
 }
 
-export function fmtNum(n: number): string { return new Intl.NumberFormat('id-ID').format(n); }
+export function fmtNum(n: number): string { return new Intl.NumberFormat(locale()).format(n); }
 export function fmtDate(v: string | number | Date | null | undefined, withTime = true): string {
   if (v == null || v === '') return '–';
   const d = new Date(typeof v === 'number' && v < 1e12 ? v * 1000 : v);
   if (Number.isNaN(+d)) return String(v);
-  return d.toLocaleString('id-ID', withTime ? { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', year: 'numeric' });
+  return d.toLocaleString(locale(), withTime ? { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', year: 'numeric' });
 }
 export function relTime(v: string | number | Date): string {
   const d = new Date(typeof v === 'number' && v < 1e12 ? v * 1000 : v);
   const s = (Date.now() - +d) / 1000;
   if (Number.isNaN(s)) return '';
-  const rtf = new Intl.RelativeTimeFormat('id-ID', { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
   const abs = Math.abs(s);
-  if (abs < 60) return 'baru saja';
+  if (abs < 60) return t('baru saja');
   if (abs < 3600) return rtf.format(-Math.round(s / 60), 'minute');
   if (abs < 86400) return rtf.format(-Math.round(s / 3600), 'hour');
   if (abs < 86400 * 7) return rtf.format(-Math.round(s / 86400), 'day');

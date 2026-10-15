@@ -5,6 +5,7 @@ import { h } from './dom';
 import { svg } from '../icons';
 import { modal } from './overlay';
 import { settings } from '../settings';
+import { t, locale } from '../i18n';
 
 export const REPO_URL = 'https://github.com/Rehan30g/strix';
 const KEY = 'aboutSeen', LS = 'sm2.aboutSeen';
@@ -19,26 +20,28 @@ export function markAboutSeen(): void {
 }
 
 const dayStart = (iso: string) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1).getTime(); };
-/** "20 Oktober 2026" */
+/** "20 Oktober 2026" / "October 20, 2026" */
 export function fmtEndDate(iso: string): string {
-  const t = dayStart(iso);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : iso;
+  const d = dayStart(iso);
+  return Number.isFinite(d) ? new Date(d).toLocaleDateString(locale(), { day: 'numeric', month: 'long', year: 'numeric' }) : iso;
 }
-/** "20 Okt" */
+/** "20 Okt" / "Oct 20" */
 export function fmtEndShort(iso: string): string {
-  const t = dayStart(iso);
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) : iso;
+  const d = dayStart(iso);
+  return Number.isFinite(d) ? new Date(d).toLocaleDateString(locale(), { day: 'numeric', month: 'short' }) : iso;
 }
 /** whole days from today to the end day (0 = today, negative = already over) */
 export function daysLeft(iso: string): number {
   const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   return Math.round((dayStart(iso) - today) / 86400000);
 }
-/** "6 hari lagi" / "hari ini" / "sudah ditutup" */
+/** "6 hari lagi" / "besok" / "hari ini" / "sudah ditutup" ("6 days left" / "tomorrow" / "today" / "closed") */
 export function leftLabel(iso: string): string {
   const n = daysLeft(iso);
-  return n > 1 ? `${n} hari lagi` : n === 1 ? 'besok' : n === 0 ? 'hari ini' : 'sudah ditutup';
+  return n > 1 ? t('{n} hari lagi', { n }) : n === 1 ? t('besok') : n === 0 ? t('hari ini') : t('sudah ditutup');
 }
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Resolves when the notice is closed. `first` = the automatic one: the button reads "Mengerti" and the notice is remembered. */
 export function openAbout(opts: { testEnd: string; first?: boolean }): Promise<void> {
@@ -46,24 +49,24 @@ export function openAbout(opts: { testEnd: string; first?: boolean }): Promise<v
   const over = daysLeft(testEnd) < 0;
   const end = h('div', { class: 'about-end' + (over ? ' over' : daysLeft(testEnd) <= 2 ? ' soon' : ''), html: svg('calendar') },
     h('div', null,
-      h('b', null, over ? `Uji coba ditutup pada ${fmtEndDate(testEnd)}` : `Uji coba ini ditutup pada ${fmtEndDate(testEnd)}`),
-      h('span', null, over ? 'Terima kasih sudah mencoba.' : `${leftLabel(testEnd)}. Setelah itu layanan tidak bisa dipakai lagi.`)));
-  const li = (icon: string, t: string) => h('li', { html: svg(icon) }, h('span', null, t));
+      h('b', null, over ? t('Uji coba ditutup pada {date}', { date: fmtEndDate(testEnd) }) : t('Uji coba ini ditutup pada {date}', { date: fmtEndDate(testEnd) })),
+      h('span', null, over ? t('Terima kasih sudah mencoba.') : t('{left}. Setelah itu layanan tidak bisa dipakai lagi.', { left: cap(leftLabel(testEnd)) }))));
+  const li = (icon: string, text: string) => h('li', { html: svg(icon) }, h('span', null, text));
   const body = h('div', { class: 'about' },
     end,
-    h('p', { class: 'about-lead' }, 'Strix adalah eksperimen ngobrol dengan persona AI lewat suara, dengan teks ke suara, pengubah suara, dan clone suara.'),
+    h('p', { class: 'about-lead' }, t('Strix adalah eksperimen ngobrol dengan persona AI lewat suara, dengan teks ke suara, pengubah suara, dan clone suara.')),
     h('ul', { class: 'about-list' },
-      li('shield', 'Hanya untuk pengundang dan penguji. Ini uji coba tertutup, bisa berubah atau rusak tanpa pemberitahuan.'),
-      li('chat', 'Persona dan suaranya dibuat oleh AI. Jangan bagikan data pribadi yang sensitif.'),
-      li('info', 'Yang tersimpan di server: emailmu, teks yang kamu ubah jadi suara, dan ringkasan ingatan percakapan. Ingatan bisa dihapus lewat menu persona.'),
-      li('mic', 'Clone suara boleh untuk suaramu sendiri, suara yang kamu punya izinnya, atau suara karakter, asal bukan untuk tujuan komersial atau melanggar hak cipta.')),
+      li('shield', t('Hanya untuk pengundang dan penguji. Ini uji coba tertutup, bisa berubah atau rusak tanpa pemberitahuan.')),
+      li('chat', t('Persona dan suaranya dibuat oleh AI. Jangan bagikan data pribadi yang sensitif.')),
+      li('info', t('Yang tersimpan di server: emailmu, teks yang kamu ubah jadi suara, dan ringkasan ingatan percakapan. Ingatan bisa dihapus lewat menu persona.')),
+      li('mic', t('Clone suara boleh untuk suaramu sendiri, suara yang kamu punya izinnya, atau suara karakter, asal bukan untuk tujuan komersial atau melanggar hak cipta.'))),
     h('a', { class: 'about-repo', href: REPO_URL, target: '_blank', rel: 'noopener noreferrer', html: svg('external') },
-      h('div', null, h('span', null, 'Kode sumber di GitHub'), h('small', null, 'github.com/Rehan30g/strix · lisensi MIT'))));
-  const ok = h('button', { type: 'button', class: 'btn primary lg block' }, opts.first ? 'Mengerti, lanjut' : 'Tutup') as HTMLButtonElement;
+      h('div', null, h('span', null, t('Kode sumber di GitHub')), h('small', null, t('github.com/Rehan30g/strix · lisensi MIT')))));
+  const ok = h('button', { type: 'button', class: 'btn primary lg block' }, opts.first ? t('Mengerti, lanjut') : t('Tutup')) as HTMLButtonElement;
   return new Promise((resolve) => {
     let done = false;
     const finish = () => { if (done) return; done = true; if (opts.first) markAboutSeen(); resolve(); };
-    const m = modal({ title: 'Tentang uji coba ini', body, cls: 'about-dlg', actions: [ok], onClose: finish });
+    const m = modal({ title: t('Tentang uji coba ini'), body, cls: 'about-dlg', actions: [ok], onClose: finish });
     ok.onclick = () => { m.close(); finish(); };
   });
 }

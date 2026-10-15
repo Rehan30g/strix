@@ -7,28 +7,29 @@
 import { h } from './dom';
 import { svg } from '../icons';
 import { drag, rubber, settle, haptic } from './gesture';
+import { t } from '../i18n';
 
 /* ---------- toast ---------- */
 let toastBox: HTMLElement | null = null;
 export type ToastKind = 'info' | 'ok' | 'warn' | 'bad';
 export function toast(message: string, opts: { kind?: ToastKind; title?: string; timeout?: number } = {}): () => void {
-  if (!toastBox) { toastBox = h('div', { class: 'toasts', role: 'region', 'aria-live': 'polite', 'aria-label': 'Notifikasi' }); document.body.append(toastBox); }
+  if (!toastBox) { toastBox = h('div', { class: 'toasts', role: 'region', 'aria-live': 'polite', 'aria-label': t('Notifikasi') }); document.body.append(toastBox); }
   const kind = opts.kind || 'info';
   const iconName = { info: 'info', ok: 'checkCircle', warn: 'alert', bad: 'xCircle' }[kind];
-  const x = h('button', { class: 't-x', 'aria-label': 'Tutup', html: svg('x') });
-  const t = h('div', { class: 'toast ' + kind, role: kind === 'bad' ? 'alert' : 'status', html: svg(iconName) },
+  const x = h('button', { class: 't-x', 'aria-label': t('Tutup'), html: svg('x') });
+  const el = h('div', { class: 'toast ' + kind, role: kind === 'bad' ? 'alert' : 'status', html: svg(iconName) },
     h('div', { class: 't-body' }, opts.title ? h('div', { class: 't-title' }, opts.title) : null, h('div', null, message)), x);
   // the same message again while it is still showing: keep the one there (restart its timer) instead of stacking
   const same = [...toastBox.children].find((c) => !(c as HTMLElement).classList.contains('out') && (c as HTMLElement).dataset.msg === kind + '|' + message) as (HTMLElement & { _close?: () => void; _arm?: (ms: number) => void }) | undefined;
   const ms = opts.timeout ?? (kind === 'bad' ? 7000 : 4000);
   if (same?._close) { same._arm?.(ms); return same._close; }
-  t.dataset.msg = kind + '|' + message;
+  el.dataset.msg = kind + '|' + message;
   let gone = false, timer: ReturnType<typeof setTimeout> | null = null;
-  const close = () => { if (gone) return; gone = true; if (timer) clearTimeout(timer); t.classList.add('out'); setTimeout(() => t.remove(), 200); };
+  const close = () => { if (gone) return; gone = true; if (timer) clearTimeout(timer); el.classList.add('out'); setTimeout(() => el.remove(), 200); };
   const arm = (m: number) => { if (timer) clearTimeout(timer); timer = m > 0 ? setTimeout(close, m) : null; };
-  Object.assign(t, { _close: close, _arm: arm });
+  Object.assign(el, { _close: close, _arm: arm });
   x.onclick = close;
-  toastBox.append(t);
+  toastBox.append(el);
   while (toastBox.children.length > 4) toastBox.firstElementChild?.remove();
   arm(ms);
   return close;
@@ -67,7 +68,7 @@ export function modal(opts: { title: string; body?: Node | string; wide?: boolea
   if (typeof opts.body === 'string') body.textContent = opts.body; else if (opts.body) body.append(opts.body);
   const footer = h('div', { class: 'dlg-f', hidden: !opts.actions?.length }, ...(opts.actions || []));
   const titleId = 'dlg-' + Math.random().toString(36).slice(2, 8);
-  const xb = h('button', { class: 'btn ghost icon sm', 'aria-label': 'Tutup', html: svg('x') });
+  const xb = h('button', { class: 'btn ghost icon sm', 'aria-label': t('Tutup'), html: svg('x') });
   const grab = h('div', { class: 'dlg-grab', 'aria-hidden': 'true' }, h('i'));
   const head = h('div', { class: 'dlg-h' }, h('h2', { id: titleId }, opts.title), xb);
   const dlg = h('div', { class: 'dlg' + (opts.wide ? ' wide' : '') + (opts.cls ? ' ' + opts.cls : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId,
@@ -121,8 +122,8 @@ export function modal(opts: { title: string; body?: Node | string; wide?: boolea
 export function confirmDialog(opts: { title: string; message: string; confirm?: string; cancel?: string; danger?: boolean }): Promise<boolean> {
   return new Promise((resolve) => {
     let result = false;
-    const ok = h('button', { class: 'btn ' + (opts.danger ? 'danger' : 'primary'), type: 'button' }, opts.confirm || 'OK');
-    const no = h('button', { class: 'btn', type: 'button' }, opts.cancel || 'Batal');
+    const ok = h('button', { class: 'btn ' + (opts.danger ? 'danger' : 'primary'), type: 'button' }, opts.confirm || t('OK'));
+    const no = h('button', { class: 'btn', type: 'button' }, opts.cancel || t('Batal'));
     const m = modal({ title: opts.title, body: opts.message, actions: [no, ok], onClose: () => resolve(result) });
     ok.onclick = () => { result = true; m.close(); };
     no.onclick = () => m.close();
@@ -134,7 +135,7 @@ const openDrawers = new Map<string, { close: () => void; root: HTMLElement }>();
 export function drawer(opts: { title: string; body: Node; onClose?: () => void; width?: number }): { close: () => void; root: HTMLElement } {
   const was = openDrawers.get(opts.title);
   if (was && was.root.isConnected) { queueMicrotask(() => opts.onClose?.()); return { close: () => {}, root: h('div') }; }
-  const xb = h('button', { class: 'btn ghost icon', 'aria-label': 'Tutup', html: svg('x') });
+  const xb = h('button', { class: 'btn ghost icon', 'aria-label': t('Tutup'), html: svg('x') });
   const panel = h('aside', { class: 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': opts.title, style: opts.width ? `width:min(${opts.width}px,100%)` : '' },
     h('div', { class: 'drawer-h' }, h('h2', null, opts.title), xb), h('div', { class: 'drawer-b' }, opts.body));
   const scrim = h('div', { class: 'drawer-scrim' });

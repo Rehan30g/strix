@@ -10,8 +10,10 @@ import { api, resetText, type Me } from '../api';
 import { settings } from '../settings';
 import { setTheme, themePref } from '../theme';
 import { fmtEndDate, leftLabel } from './about';
+import { langSwitch } from './langswitch';
+import { t } from '../i18n';
 
-const fmtSec = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} mnt${s % 60 ? ` ${Math.round(s % 60)} dtk` : ''}` : `${Math.round(s)} dtk`);
+const fmtSec = (s: number) => (s >= 60 ? (s % 60 ? t('{m} mnt {s} dtk', { m: Math.floor(s / 60), s: Math.round(s % 60) }) : t('{m} mnt', { m: Math.floor(s / 60) })) : t('{s} dtk', { s: Math.round(s) }));
 
 export function quotaMeter(label: string, used: number, limit: number, fmt: (n: number) => string = fmtNum): HTMLElement {
   const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
@@ -24,12 +26,12 @@ export function quotaMeter(label: string, used: number, limit: number, fmt: (n: 
 export function quotaBlock(me: Me): HTMLElement[] {
   const q = me.quota; if (!q) return [];
   const out = [
-    quotaMeter('Chat AI (permintaan)', q.llm?.used ?? 0, q.llm?.limit ?? 0),
-    quotaMeter('TTS (karakter)', q.tts?.used ?? 0, q.tts?.limit ?? 0),
+    quotaMeter(t('Chat AI (permintaan)'), q.llm?.used ?? 0, q.llm?.limit ?? 0),
+    quotaMeter(t('TTS (karakter)'), q.tts?.used ?? 0, q.tts?.limit ?? 0),
   ];
   if (q.vc) out.push(quotaMeter('Voice Changer', q.vc.used ?? 0, q.vc.limit ?? 0, fmtSec));
-  if (q.stt) out.push(quotaMeter('Bicara lewat mic', q.stt.used ?? 0, q.stt.limit ?? 0, fmtSec));
-  if (q.search) out.push(quotaMeter('Pencarian web (chat)', q.search.used ?? 0, q.search.limit ?? 0));
+  if (q.stt) out.push(quotaMeter(t('Bicara lewat mic'), q.stt.used ?? 0, q.stt.limit ?? 0, fmtSec));
+  if (q.search) out.push(quotaMeter(t('Pencarian web (chat)'), q.search.used ?? 0, q.search.limit ?? 0));
   return out;
 }
 
@@ -41,34 +43,35 @@ export function openAccount(onLogout: () => void): void {
   paintQuota();
   const reset = resetText(me.quota?.resetAt);
 
-  const theme = seg<'system' | 'light' | 'dark'>([['system', 'Sistem', 'monitor'], ['light', 'Terang', 'sun'], ['dark', 'Gelap', 'moon']], themePref(),
-    (v) => { setTheme(v); settings.setPrefs({ theme: v }); }, 'Tema', true);
+  const theme = seg<'system' | 'light' | 'dark'>([['system', t('Sistem'), 'monitor'], ['light', t('Terang'), 'sun'], ['dark', t('Gelap'), 'moon']], themePref(),
+    (v) => { setTheme(v); settings.setPrefs({ theme: v }); }, t('Tema'), true);
 
-  const level = switchRow('Samakan volume suara', settings.prefs().levelVoices !== false, (v) => { settings.setPrefs({ levelVoices: v }); },
-    'Suara yang pelan dikeraskan dan yang keras dipelankan agar volumenya setara, tanpa menghilangkan bisikan atau teriakan.');
+  const level = switchRow(t('Samakan volume suara'), settings.prefs().levelVoices !== false, (v) => { settings.setPrefs({ levelVoices: v }); },
+    t('Suara yang pelan dikeraskan dan yang keras dipelankan agar volumenya setara, tanpa menghilangkan bisikan atau teriakan.'));
   level.classList.add('acct-level');
 
   const adv = h('details', { class: 'disclosure' },
-    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Kestabilan, kemiripan, gaya, kecepatan')),
+    h('summary', null, h('span', null, t('Tuning suara')), h('small', null, t('Kestabilan, kemiripan, gaya, kecepatan'))),
     h('div', { class: 'disc-b stack' }, tuneControls({ compact: true })));
 
-  const logout = h('button', { type: 'button', class: 'btn danger-soft block', html: svg('logout') }, 'Keluar');
-  const adminLink = me.user.isAdmin ? h('a', { class: 'acct-link', href: '#/admin', html: svg('shield') }, h('span', null, 'Panel admin'), h('span', { html: svg('chevronRight'), style: 'display:contents' })) : null;
+  const logout = h('button', { type: 'button', class: 'btn danger-soft block', html: svg('logout') }, t('Keluar'));
+  const adminLink = me.user.isAdmin ? h('a', { class: 'acct-link', href: '#/admin', html: svg('shield') }, h('span', null, t('Panel admin')), h('span', { html: svg('chevronRight'), style: 'display:contents' })) : null;
 
   const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '');
-  const aboutLink = h('button', { type: 'button', class: 'acct-link', html: svg('info') }, h('span', null, 'Tentang uji coba', endIso ? h('small', { class: 'acct-sub' }, `Ditutup ${fmtEndDate(endIso)} · ${leftLabel(endIso)}`) : null), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
+  const aboutLink = h('button', { type: 'button', class: 'acct-link', html: svg('info') }, h('span', null, t('Tentang uji coba'), endIso ? h('small', { class: 'acct-sub' }, t('Ditutup {date} · {left}', { date: fmtEndDate(endIso), left: leftLabel(endIso) })) : null), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   // "Pesan": only once there is a thread (quota requests), with a note while a reply is unread
   const msgLink = inbox.exists ? h('button', { type: 'button', class: 'acct-link', html: svg('message') },
-    h('span', null, 'Pesan', inbox.unread ? h('i', { class: 'acct-dot', 'aria-hidden': 'true' }) : null,
-      h('small', { class: 'acct-sub' }, inbox.unread ? 'Ada balasan baru' : 'Soal tambahan kuota')),
+    h('span', null, t('Pesan'), inbox.unread ? h('i', { class: 'acct-dot', 'aria-hidden': 'true' }) : null,
+      h('small', { class: 'acct-sub' }, inbox.unread ? t('Ada balasan baru') : t('Soal tambahan kuota'))),
     h('span', { html: svg('chevronRight'), style: 'display:contents' })) : null;
-  const introLink = h('button', { type: 'button', class: 'acct-link', html: svg('sparkle') }, h('span', null, 'Tur singkat'), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
+  const introLink = h('button', { type: 'button', class: 'acct-link', html: svg('sparkle') }, h('span', null, t('Tur singkat')), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const body = h('div', { class: 'acct' },
     h('div', { class: 'acct-head' }, avatar(me.user.name || me.user.email, me.user.picture, 'lg'),
-      h('div', { class: 'who' }, h('b', null, me.user.name || 'Pengguna'), h('span', null, me.user.email))),
-    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Kuota hari ini'), reset ? h('small', null, `reset ${reset}`) : null), quota),
-    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Tema')), theme),
-    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Suara')), level),
+      h('div', { class: 'who' }, h('b', null, me.user.name || t('Pengguna')), h('span', null, me.user.email))),
+    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, t('Kuota hari ini')), reset ? h('small', null, t('reset {when}', { when: reset })) : null), quota),
+    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, t('Tema'))), theme),
+    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Bahasa / Language')), langSwitch('seg')),
+    h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, t('Suara'))), level),
     adv,
     msgLink,
     aboutLink,
@@ -76,7 +79,7 @@ export function openAccount(onLogout: () => void): void {
     adminLink,
     logout);
 
-  const m = modal({ title: 'Akun', body, cls: 'acct-dlg' });
+  const m = modal({ title: t('Akun'), body, cls: 'acct-dlg' });
   aboutLink.onclick = () => { m.close(); import('./about').then((x) => x.openAbout({ testEnd: endIso || '2026-10-20' })).catch(() => {}); };
   if (msgLink) msgLink.onclick = () => { m.close(); location.hash = '#/messages'; };
   introLink.onclick = () => { m.close(); import('./intro').then((x) => x.openIntro()).catch(() => {}); };

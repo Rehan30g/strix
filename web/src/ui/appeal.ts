@@ -8,6 +8,7 @@ import { h } from './dom';
 import { svg } from '../icons';
 import { toast } from './overlay';
 import { api, QUOTA_LABEL } from '../api';
+import { t, locale } from '../i18n';
 
 export interface ThreadMsg { id: number; fromAdmin: boolean; text: string; image: boolean; at: string | null }
 export interface ThreadLoad { messages: ThreadMsg[]; open?: boolean }
@@ -34,24 +35,24 @@ interface Pending { key: number; text: string; image?: string; state: 'sending' 
 
 const MAX = 400, GROUP_MS = 5 * 60_000;
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const timeOf = (t: number) => new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-const dayKey = (t: number) => { const d = new Date(t); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
-function dayLabel(t: number): string {
-  const now = new Date(), d = new Date(t);
-  if (dayKey(t) === dayKey(+now)) return 'Hari ini';
-  if (dayKey(t) === dayKey(+now - 864e5)) return 'Kemarin';
-  return d.toLocaleDateString('id-ID', d.getFullYear() === now.getFullYear() ? { weekday: 'long', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
+const timeOf = (ts: number) => new Date(ts).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+const dayKey = (ts: number) => { const d = new Date(ts); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
+function dayLabel(ts: number): string {
+  const now = new Date(), d = new Date(ts);
+  if (dayKey(ts) === dayKey(+now)) return t('Hari ini');
+  if (dayKey(ts) === dayKey(+now - 864e5)) return t('Kemarin');
+  return d.toLocaleDateString(locale(), d.getFullYear() === now.getFullYear() ? { weekday: 'long', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });
 }
-const fullTime = (t: number) => new Date(t).toLocaleString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fullTime = (ts: number) => new Date(ts).toLocaleString(locale(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 const ERR: Record<string, string> = {
-  too_short: 'Ceritakan sedikit lagi ya, minimal 15 karakter.',
-  too_many: 'Kamu sudah mengirim 6 pesan dalam sehari. Tunggu balasannya dulu ya.',
-  bad_image: 'Fotonya tidak bisa dikirim. Coba foto lain.',
-  rate_limited: 'Terlalu sering mengirim. Coba lagi sebentar lagi.',
-  network: 'Gagal terkirim. Periksa koneksimu.',
+  too_short: t('Ceritakan sedikit lagi ya, minimal {n} karakter.', { n: 15 }),
+  too_many: t('Kamu sudah mengirim 6 pesan dalam sehari. Tunggu balasannya dulu ya.'),
+  bad_image: t('Fotonya tidak bisa dikirim. Coba foto lain.'),
+  rate_limited: t('Terlalu sering mengirim. Coba lagi sebentar lagi.'),
+  network: t('Gagal terkirim. Periksa koneksimu.'),
 };
-const errText = (e: any) => ERR[e?.code] || 'Gagal terkirim.';
+const errText = (e: any) => ERR[e?.code] || t('Gagal terkirim.');
 
 /** Shrink a photo to a JPEG of at most ~1280 px and well under the server limit; resolves with the base64 payload. */
 async function shrink(file: File): Promise<string> {
@@ -68,15 +69,15 @@ async function shrink(file: File): Promise<string> {
       return btoa(bin);
     }
   }
-  throw new Error('Fotonya terlalu besar.');
+  throw new Error(t('Fotonya terlalu besar.'));
 }
 
 /** Full-screen photo viewer: Esc, the close button or a tap outside the photo closes it; focus returns to the opener. */
 function lightbox(src: string, opener: HTMLElement) {
-  const img = h('img', { src, alt: 'Foto' });
-  const x = h('button', { type: 'button', class: 'ap-lb-b', 'aria-label': 'Tutup foto', html: svg('x') }) as HTMLButtonElement;
-  const open = src.startsWith('data:') ? null : h('a', { class: 'ap-lb-b', href: src, target: '_blank', rel: 'noopener', 'aria-label': 'Buka di tab baru', title: 'Buka di tab baru', html: svg('external') });
-  const box = h('div', { class: 'ap-lb', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Foto' }, img, h('div', { class: 'ap-lb-bar' }, open, x));
+  const img = h('img', { src, alt: t('Foto') });
+  const x = h('button', { type: 'button', class: 'ap-lb-b', 'aria-label': t('Tutup foto'), html: svg('x') }) as HTMLButtonElement;
+  const open = src.startsWith('data:') ? null : h('a', { class: 'ap-lb-b', href: src, target: '_blank', rel: 'noopener', 'aria-label': t('Buka di tab baru'), title: t('Buka di tab baru'), html: svg('external') });
+  const box = h('div', { class: 'ap-lb', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('Foto') }, img, h('div', { class: 'ap-lb-bar' }, open, x));
   const close = () => { box.remove(); removeEventListener('keydown', key, true); removeEventListener('hashchange', close); opener.focus({ preventScroll: true }); };
   const key = (e: KeyboardEvent) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
@@ -96,14 +97,14 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
   /* ---------- structure ---------- */
   const list = h('div', { class: 'ap-list' });
   const scroller = h('div', { class: 'ap-scroll', role: 'log', 'aria-label': o.label, tabindex: '0' }, list);
-  const jump = h('button', { type: 'button', class: 'ap-jump', hidden: true, html: svg('chevronDown') }, h('span', null, 'Pesan baru')) as HTMLButtonElement;
+  const jump = h('button', { type: 'button', class: 'ap-jump', hidden: true, html: svg('chevronDown') }, h('span', null, t('Pesan baru'))) as HTMLButtonElement;
   const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
   const main = h('div', { class: 'ap-main' }, scroller, jump, live);
 
-  const input = h('textarea', { class: 'input ap-in', rows: '1', maxLength: MAX, placeholder: o.placeholder, enterkeyhint: 'send', 'aria-label': 'Tulis pesan' }) as HTMLTextAreaElement;
+  const input = h('textarea', { class: 'input ap-in', rows: '1', maxLength: MAX, placeholder: o.placeholder, enterkeyhint: 'send', 'aria-label': t('Tulis pesan') }) as HTMLTextAreaElement;
   const file = h('input', { type: 'file', accept: 'image/*', hidden: true, tabindex: '-1' }) as HTMLInputElement;
-  const attach = h('button', { type: 'button', class: 'btn ghost icon ap-attach', 'aria-label': 'Lampirkan foto', title: 'Lampirkan foto', html: svg('image') }) as HTMLButtonElement;
-  const send = h('button', { type: 'submit', class: 'btn primary icon ap-send', 'aria-label': 'Kirim', title: 'Kirim', disabled: true, html: svg('arrowUp') }) as HTMLButtonElement;
+  const attach = h('button', { type: 'button', class: 'btn ghost icon ap-attach', 'aria-label': t('Lampirkan foto'), title: t('Lampirkan foto'), html: svg('image') }) as HTMLButtonElement;
+  const send = h('button', { type: 'submit', class: 'btn primary icon ap-send', 'aria-label': t('Kirim'), title: t('Kirim'), disabled: true, html: svg('arrowUp') }) as HTMLButtonElement;
   const chip = h('div', { class: 'ap-chip', hidden: true });
   const noteMsg = h('span', { class: 'ap-note-m' });
   const counter = h('span', { class: 'ap-count', hidden: true });
@@ -132,7 +133,7 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
     counter.textContent = `${n}/${MAX}`;
     counter.classList.toggle('max', n >= MAX);
   };
-  const setNote = (t: string, bad = false) => { noteMsg.textContent = t; note.classList.toggle('bad', bad); };
+  const setNote = (text: string, bad = false) => { noteMsg.textContent = text; note.classList.toggle('bad', bad); };
   const grow = () => {
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight + (input.offsetHeight - input.clientHeight), 168) + 'px';
@@ -140,9 +141,9 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
   const setPhoto = (b64: string | null) => {
     photo = b64;
     chip.hidden = !b64;
-    const rm = h('button', { type: 'button', class: 'btn ghost icon ap-chip-x', 'aria-label': 'Hapus foto', title: 'Hapus foto', html: svg('x') });
+    const rm = h('button', { type: 'button', class: 'btn ghost icon ap-chip-x', 'aria-label': t('Hapus foto'), title: t('Hapus foto'), html: svg('x') });
     rm.onclick = () => { setPhoto(null); input.focus(); };
-    chip.replaceChildren(...(b64 ? [h('img', { src: 'data:image/jpeg;base64,' + b64, alt: 'Foto terlampir' }), h('span', null, 'Foto siap dikirim'), rm] : []));
+    chip.replaceChildren(...(b64 ? [h('img', { src: 'data:image/jpeg;base64,' + b64, alt: t('Foto terlampir') }), h('span', null, t('Foto siap dikirim')), rm] : []));
     syncSend();
   };
   attach.onclick = () => file.click();
@@ -150,7 +151,7 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
     const f = file.files?.[0]; file.value = '';
     if (!f) return;
     attach.disabled = true; attach.classList.add('busy'); attach.innerHTML = '<span class="spinner" aria-hidden="true"></span>';
-    try { setPhoto(await shrink(f)); input.focus({ preventScroll: true }); } catch (e: any) { toast(e?.message || 'Fotonya tidak bisa dibaca.', { kind: 'bad' }); }
+    try { setPhoto(await shrink(f)); input.focus({ preventScroll: true }); } catch (e: any) { toast(e?.message || t('Fotonya tidak bisa dibaca.'), { kind: 'bad' }); }
     finally { attach.disabled = false; attach.classList.remove('busy'); attach.innerHTML = svg('image'); }
   };
   input.addEventListener('input', () => { grow(); syncSend(); if (note.classList.contains('bad')) setNote(''); });
@@ -166,12 +167,12 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
     img.style.height = Math.round(Math.min(320, Math.max(110, hh * k))) + 'px';
   };
   const photoEl = (src: string, id: number | null) => {
-    const img = h('img', { src, alt: 'Foto', decoding: 'async' }) as HTMLImageElement;
+    const img = h('img', { src, alt: t('Foto'), decoding: 'async' }) as HTMLImageElement;
     const known = id != null ? sizes.get(id) : undefined;
     if (known) fit(img, known[0], known[1]);
     img.onload = () => { if (id != null) sizes.set(id, [img.naturalWidth, img.naturalHeight]); fit(img, img.naturalWidth, img.naturalHeight); img.parentElement?.classList.remove('loading'); };
     img.onerror = () => { img.parentElement?.classList.add('broken'); };
-    const b = h('button', { type: 'button', class: 'ap-photo' + (known ? '' : ' loading'), 'aria-label': 'Lihat foto' }, img);
+    const b = h('button', { type: 'button', class: 'ap-photo' + (known ? '' : ' loading'), 'aria-label': t('Lihat foto') }, img);
     b.onclick = () => lightbox(src, b);
     return b;
   };
@@ -180,10 +181,10 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
   type Item = { mine: boolean; t: number; node: (cls: string, showMeta: boolean) => HTMLElement };
   const items = (): Item[] => {
     const out: Item[] = msgs.map((m) => {
-      const t = m.at ? Date.parse(m.at) : Date.now();
-      return { mine: o.mine(m), t, node: (cls, showMeta) => h('div', { class: 'ap-msg ' + cls },
+      const ts = m.at ? Date.parse(m.at) : Date.now();
+      return { mine: o.mine(m), t: ts, node: (cls, showMeta) => h('div', { class: 'ap-msg ' + cls },
         bubble(m.text, m.image ? photoEl('/api/quota/image/' + m.id, m.id) : null),
-        showMeta ? h('div', { class: 'ap-meta' }, h('time', { dateTime: m.at || '', title: fullTime(t) }, timeOf(t))) : null) };
+        showMeta ? h('div', { class: 'ap-meta' }, h('time', { dateTime: m.at || '', title: fullTime(ts) }, timeOf(ts))) : null) };
     });
     const lastMine = msgs.filter((m) => o.mine(m));
     for (const p of pending) {
@@ -191,10 +192,10 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
       if (p.state === 'sent' && lastMine.some((m) => m.id > p.after && m.text === p.text)) continue;
       out.push({ mine: true, t: p.at, node: (cls) => {
         const meta = p.state === 'failed'
-          ? h('div', { class: 'ap-meta ap-fail', role: 'alert' }, h('span', null, p.error || 'Gagal terkirim.'),
-            h('button', { type: 'button', class: 'ap-act', onclick: () => void deliver(p) }, 'Coba lagi'),
-            h('button', { type: 'button', class: 'ap-act', onclick: () => { pending = pending.filter((x) => x !== p); paint(true); } }, 'Hapus'))
-          : h('div', { class: 'ap-meta' }, h('span', { class: 'spinner ap-spin', 'aria-hidden': 'true' }), 'Mengirim…');
+          ? h('div', { class: 'ap-meta ap-fail', role: 'alert' }, h('span', null, p.error || t('Gagal terkirim.')),
+            h('button', { type: 'button', class: 'ap-act', onclick: () => void deliver(p) }, t('Coba lagi')),
+            h('button', { type: 'button', class: 'ap-act', onclick: () => { pending = pending.filter((x) => x !== p); paint(true); } }, t('Hapus')))
+          : h('div', { class: 'ap-meta' }, h('span', { class: 'spinner ap-spin', 'aria-hidden': 'true' }), t('Mengirim…'));
         return h('div', { class: 'ap-msg ' + cls + ' ' + p.state }, bubble(p.text, p.image ? photoEl('data:image/jpeg;base64,' + p.image, null) : null), meta);
       } });
     }
@@ -212,8 +213,8 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
   function paint(force = false) {
     if (!loaded) {
       list.replaceChildren(failedLoad
-        ? h('div', { class: 'ap-empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, 'Pesan belum bisa dimuat'), h('p', null, 'Periksa koneksi, lalu coba lagi.'),
-          h('button', { type: 'button', class: 'btn sm', onclick: () => { failedLoad = false; paint(true); void refresh(); } }, 'Coba lagi'))
+        ? h('div', { class: 'ap-empty' }, h('div', { class: 'empty-ic', html: svg('alert') }), h('h3', null, t('Pesan belum bisa dimuat')), h('p', null, t('Periksa koneksi, lalu coba lagi.')),
+          h('button', { type: 'button', class: 'btn sm', onclick: () => { failedLoad = false; paint(true); void refresh(); } }, t('Coba lagi')))
         : skeleton());
       return;
     }
@@ -248,7 +249,7 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
       const newest = r.messages.filter((m) => !o.mine(m)).at(-1);
       if (newest && newest.id > lastIncoming) {
         if (!firstLoad) {
-          live.textContent = 'Pesan baru: ' + (newest.text || 'foto');
+          live.textContent = t('Pesan baru: {text}', { text: newest.text || t('foto') });
           if (!stick) jump.hidden = false;
         }
         lastIncoming = newest.id;
@@ -286,7 +287,7 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
     const text = input.value.trim();
     if (!text && !photo) return;
     if (startsNew() && text.length < (o.minFirst || 0)) {
-      setNote(text ? `Ceritakan sedikit lagi ya, minimal ${o.minFirst} karakter.` : 'Tambahkan sedikit cerita untuk fotonya ya.', true);
+      setNote(text ? t('Ceritakan sedikit lagi ya, minimal {n} karakter.', { n: o.minFirst || 0 }) : t('Tambahkan sedikit cerita untuk fotonya ya.'), true);
       input.focus();
       return;
     }
@@ -309,16 +310,16 @@ export function threadView(o: ViewOpts): { el: HTMLElement; destroy: () => void;
 export function testerThread(kind: string, onLoaded?: ViewOpts['onLoaded']) {
   const what = QUOTA_LABEL[kind];
   return threadView({
-    label: 'Percakapan dengan pengundangmu',
+    label: t('Percakapan dengan pengundangmu'),
     empty: {
-      title: what ? `Kuota ${what} habis?` : 'Butuh kuota tambahan?',
-      text: 'Ceritakan untuk apa kamu butuh tambahan. Pesanmu langsung sampai ke orang yang mengundangmu, dan balasannya muncul di sini.',
-      hint: 'Kuota dibatasi karena kredit uji coba ini terbatas. Boleh lampirkan foto, misalnya tangkapan layar.',
+      title: what ? t('Kuota {what} habis?', { what }) : t('Butuh kuota tambahan?'),
+      text: t('Ceritakan untuk apa kamu butuh tambahan. Pesanmu langsung sampai ke orang yang mengundangmu, dan balasannya muncul di sini.'),
+      hint: t('Kuota dibatasi karena kredit uji coba ini terbatas. Boleh lampirkan foto, misalnya tangkapan layar.'),
     },
-    intro: 'Hanya kamu dan pengundangmu yang bisa melihat percakapan ini.',
-    closedNote: 'Percakapan ini sudah selesai. Kirim pesan baru kalau butuh tambahan lagi.',
-    placeholder: 'Tulis pesan…',
-    placeholderNew: 'Ceritakan kebutuhanmu…',
+    intro: t('Hanya kamu dan pengundangmu yang bisa melihat percakapan ini.'),
+    closedNote: t('Percakapan ini sudah selesai. Kirim pesan baru kalau butuh tambahan lagi.'),
+    placeholder: t('Tulis pesan…'),
+    placeholderNew: t('Ceritakan kebutuhanmu…'),
     minFirst: 15,
     mine: (m) => !m.fromAdmin,
     onLoaded,
@@ -335,10 +336,10 @@ export function testerThread(kind: string, onLoaded?: ViewOpts['onLoaded']) {
 /** Admin side: the thread with one user. */
 export function adminThread(userId: number, onChange: () => void, isOpen: () => boolean = () => true) {
   return threadView({
-    label: 'Percakapan dengan penguji',
-    empty: { title: 'Belum ada pesan' },
-    closedNote: 'Thread ditutup. Penguji bisa membukanya lagi dengan pesan baru.',
-    placeholder: 'Balas…',
+    label: t('Percakapan dengan penguji'),
+    empty: { title: t('Belum ada pesan') },
+    closedNote: t('Thread ditutup. Penguji bisa membukanya lagi dengan pesan baru.'),
+    placeholder: t('Balas…'),
     mine: (x) => x.fromAdmin,
     load: async () => ({ ...(await api.get<{ messages: ThreadMsg[] }>('/admin/threads/' + userId)), open: isOpen() }),
     send: async (text, image) => { await api.post(`/admin/threads/${userId}/reply`, { text, image }); onChange(); },
