@@ -99,3 +99,23 @@ button.acct-link { width: 100%; background: transparent; text-align: left; }
 .ap-in { flex: 1; min-height: 44px; max-height: 120px; resize: none; }
 .ap-send { flex: none; width: 44px; height: 44px; }
 .acct-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: inline-block; margin-left: 8px; vertical-align: middle; }
+
+.msg-btn { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; color: var(--fg); flex-shrink: 0; }
+.msg-btn[hidden] { display: none; }
+.msg-btn:hover { background: var(--surface-2); }
+.msg-btn .ic { width: 22px; height: 22px; }
+.msg-dot { position: absolute; top: 9px; right: 9px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+.msg-dot[hidden] { display: none; }
+.side-msg { margin: 0 auto 6px; }
+.tb-msg { margin-left: auto; }
+.tb-msg + .tb-acct { margin-left: 0; }
+.ap-page { max-width: 640px; margin: 0 auto; }
+.ap-head h2 { margin: 0 0 2px; }
+.ap-head p { margin: 0 0 12px; }
+.ap-page .ap-list { max-height: calc(100dvh - 300px); min-height: 220px; }
+.ap-img { display: block; max-width: min(260px, 100%); max-height: 260px; border-radius: 10px; margin-bottom: 4px; }
+.ap-b a { display: block; }
+.ap-chip { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-md); }
+.ap-chip[hidden] { display: none; }
+.ap-chip img { width: 48px; height: 48px; object-fit: cover; border-radius: 8px; }
+.ap-attach { flex: none; width: 44px; height: 44px; }

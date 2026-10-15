@@ -3,6 +3,7 @@
 import { h, avatar, fmtNum, onDisconnect } from './dom';
 import { svg } from '../icons';
 import { modal } from './overlay';
+import { inbox } from '../lib/inbox';
 import { seg, switchRow, tuneControls } from './controls';
 import { store } from '../store';
 import { api, resetText, type Me } from '../api';
@@ -57,7 +58,7 @@ export function openAccount(onLogout: () => void): void {
   const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '');
   const aboutLink = h('button', { type: 'button', class: 'acct-link', html: svg('info') }, h('span', null, 'Tentang uji coba', endIso ? h('small', { class: 'acct-sub' }, `Ditutup ${fmtEndDate(endIso)} · ${leftLabel(endIso)}`) : null), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const msgDot = h('i', { class: 'acct-dot', hidden: true });
-  const msgLink = h('button', { type: 'button', class: 'acct-link', html: svg('chat') }, h('span', null, 'Pesan ke admin', msgDot), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
+  const msgLink = h('button', { type: 'button', class: 'acct-link', html: svg('chat') }, h('span', null, 'Pesan', msgDot), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const introLink = h('button', { type: 'button', class: 'acct-link', html: svg('sparkle') }, h('span', null, 'Tur singkat'), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const body = h('div', { class: 'acct' },
     h('div', { class: 'acct-head' }, avatar(me.user.name || me.user.email, me.user.picture, 'lg'),
@@ -73,8 +74,8 @@ export function openAccount(onLogout: () => void): void {
 
   const m = modal({ title: 'Akun', body, cls: 'acct-dlg' });
   aboutLink.onclick = () => { m.close(); import('./about').then((x) => x.openAbout({ testEnd: endIso || '2026-10-20' })).catch(() => {}); };
-  msgLink.onclick = () => { m.close(); import('./appeal').then((x) => x.openAppeal()).catch(() => {}); };
-  api.get<{ unread: number }>('/quota/thread').then((r) => { msgDot.hidden = !r.unread; }).catch(() => {});
+  msgLink.onclick = () => { m.close(); location.hash = '#/messages'; };
+  msgDot.hidden = !inbox.unread;
   introLink.onclick = () => { m.close(); import('./intro').then((x) => x.openIntro()).catch(() => {}); };
   if (adminLink) adminLink.addEventListener('click', () => m.close());
   logout.onclick = async () => { m.close(); try { await api.logout(); } catch { /* ignore */ } onLogout(); };

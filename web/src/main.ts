@@ -76,12 +76,12 @@ async function boot() {
 function quotaNotice(kind: string, message: string) {
   const text = message.split(' Butuh tambahan?')[0];
   import('./ui/overlay').then(({ modal }) => {
-    const body = h('div', null, h('p', { style: 'margin:0' }, text), h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Kuota ini terbatas karena kredit uji coba terbatas. Tunggu sampai direset, atau tulis pesan ke admin kalau butuh lebih.'));
+    const body = h('div', null, h('p', { style: 'margin:0' }, text), h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Kuota dibatasi karena kredit uji coba terbatas. Tunggu sampai direset, atau minta tambahan lewat pesan.'));
     const close = h('button', { type: 'button', class: 'btn ghost' }, 'Tunggu saja') as HTMLButtonElement;
-    const ask = h('button', { type: 'button', class: 'btn primary' }, 'Tulis ke admin') as HTMLButtonElement;
+    const ask = h('button', { type: 'button', class: 'btn primary' }, 'Minta tambahan') as HTMLButtonElement;
     const dlg = modal({ title: 'Kuota habis', body, key: 'quota-notice', actions: [close, ask] });
     close.onclick = () => dlg.close();
-    ask.onclick = () => { dlg.close(); import('./ui/appeal').then((x) => x.openAppeal(kind)).catch(() => {}); };
+    ask.onclick = () => { dlg.close(); location.hash = '#/messages?kind=' + encodeURIComponent(kind); };
   }).catch(() => toast(message, { kind: 'warn', title: 'Kuota habis', timeout: 8000 }));
 }
 

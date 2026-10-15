@@ -7,6 +7,7 @@ import { store } from './store';
 import { makeCtx, type Cleanup, type MountResult, type RouteInfo, type ShellApi } from './ctx';
 import { player } from './player';
 import { openAccount } from './ui/account';
+import { inbox, onInbox, refreshMessages } from './lib/inbox';
 import { drag, rubber, settle, haptic } from './ui/gesture';
 import { enter, leave } from './ui/transition';
 
@@ -38,10 +39,22 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
     paintAccount();
     return b;
   };
+  // "Pesan": only there once a thread exists, with a dot while a reply is unread
+  const msgButtons: HTMLAnchorElement[] = [];
+  const messageButton = (cls: string) => {
+    const a = h('a', { class: 'msg-btn ' + cls, href: '#/messages', 'aria-label': 'Pesan', title: 'Pesan', hidden: true, html: svg('chat') }, h('i', { class: 'msg-dot', hidden: true })) as HTMLAnchorElement;
+    msgButtons.push(a);
+    return a;
+  };
+  const paintInbox = () => { for (const a of msgButtons) { a.hidden = !inbox.exists; (a.querySelector('.msg-dot') as HTMLElement).hidden = !inbox.unread; } };
+  const unInbox = onInbox(paintInbox);
+  void refreshMessages();
+  const inboxTimer = setInterval(() => { if (!document.hidden) void refreshMessages(); }, 60000);
   const side = h('nav', { class: 'side', 'aria-label': 'Navigasi utama' },
     h('a', { class: 'side-brand', href: '#/' + DEFAULT_ROUTE, 'aria-label': 'Strix', html: svg('waveform') }),
     h('div', { class: 'side-items' }, ...tabs.map((r) => link(r, 'side-item'))),
     h('div', { class: 'spacer' }),
+    messageButton('side-msg'),
     accountButton());
   const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Navigasi' }, ...tabs.map((r) => link(r, 'tab')));
 
@@ -50,7 +63,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
   const title = h('h1', { class: 'tb-title' });
   const actions = h('div', { class: 'tb-actions' });
   const topAcct = accountButton(); topAcct.classList.add('tb-acct');
-  const topbar = h('header', { class: 'topbar' }, h('div', { class: 'tb-in' }, back, title, actions, topAcct));
+  const topbar = h('header', { class: 'topbar' }, h('div', { class: 'tb-in' }, back, title, actions, messageButton('tb-msg'), topAcct));
 
   const view = h('main', { class: 'view', id: 'view', tabindex: '-1' });
   const main = h('div', { class: 'main' }, topbar, view);
@@ -186,7 +199,7 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
   if (!parseHash().name) history.replaceState(null, '', '#/' + DEFAULT_ROUTE);
   go();
   return () => {
-    removeEventListener('hashchange', go); unMe(); unSwipe(); vv?.removeEventListener('resize', onVV); vv?.removeEventListener('scroll', onVV); document.removeEventListener('focusin', onFocus); document.removeEventListener('focusout', onFocus);
+    removeEventListener('hashchange', go); unMe(); unInbox(); clearInterval(inboxTimer); unSwipe(); vv?.removeEventListener('resize', onVV); vv?.removeEventListener('scroll', onVV); document.removeEventListener('focusin', onFocus); document.removeEventListener('focusout', onFocus);
     try { cleanup?.(); } catch (e) { console.error(e); }
     cleanup = null; token++;
   };

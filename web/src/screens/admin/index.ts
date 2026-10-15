@@ -3,6 +3,7 @@
 import type { ScreenCtx } from '../../ctx';
 import { h, fmtDate, relTime, fmtNum, avatar } from '../../ui/dom';
 import { field, seg } from '../../ui/controls';
+import { adminThread } from '../../ui/appeal';
 
 interface Invite { id: number; code: string; maxUses: number; usedCount: number; expiresAt: string; note: string | null; revoked: boolean; status: 'active' | 'expired' | 'full' | 'revoked'; createdBy: string | null; createdAt: string; users: string[] }
 interface Limits { llmReqPerDay: number; ttsCharsPerDay: number; maxClones: number; vcSecPerDay?: number; sttSecPerDay?: number }
@@ -14,7 +15,7 @@ const USER_STATUS: Record<AdminUser['status'], [string, string]> = { active: ['A
 export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   const { api, ui, icons, store } = ctx;
   const S = icons.svg;
-  let tab: 'invites' | 'users' = ctx.route.params.get('tab') === 'users' ? 'users' : 'invites';
+  let tab: 'invites' | 'users' | 'messages' = ctx.route.params.get('tab') === 'users' ? 'users' : ctx.route.params.get('tab') === 'messages' ? 'messages' : 'invites';
   let invites: Invite[] = [], users: AdminUser[] = [];
   let showInactive = false;
   let uq = '';
@@ -186,18 +187,31 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       catch (e: any) { ui.toast(e.message, { kind: 'bad' }); save.disabled = false; }
     };
   }
-  /* ---------- quota appeals (chat threads with testers whose daily quota ran out) ---------- */
-  const reqBody = h('div', { class: 'card-b stack', style: 'gap:8px' });
-  const reqView = h('section', { class: 'card', hidden: true }, h('div', { class: 'card-h' }, h('h2', null, 'Pesan dari penguji')), reqBody);
-  async function loadRequests() {
-    try {
-      const ts = (await api.get<{ threads: Array<{ userId: number; email: string; kind: string; open: boolean; awaiting: boolean; last: string; updatedAt: string }> }>('/admin/threads')).threads || [];
-      reqView.hidden = !ts.length;
-      reqBody.replaceChildren(...ts.map((t) => h('button', { type: 'button', class: 'acct-link', style: t.open ? '' : 'opacity:.6', onclick: () => import('../../ui/appeal').then((x) => x.openAdminThread({
-        userId: t.userId, email: t.email, onChange: () => loadRequests(),
-        onQuota: () => { const u = users.find((y) => y.id === t.userId); if (u) editQuota(u); else ui.toast('Buka tab Pengguna dulu.', { kind: 'warn' }); },
-      })) }, h('span', null, h('b', null, t.email, t.awaiting ? h('i', { class: 'acct-dot' }) : null), h('small', { class: 'acct-sub' }, (t.open ? '' : '(ditutup) ') + (t.last || ''))))));
-    } catch { /* optional */ }
+  /* ---------- messages: chat threads with testers (quota appeals) ---------- */
+  interface Th { userId: number; email: string; kind: string; open: boolean; awaiting: boolean; last: string; updatedAt: string }
+  let threads: Th[] = [], openThread: Th | null = null, tv: { destroy: () => void } | null = null;
+  const msgBody = h('div', { class: 'card-b stack', style: 'gap:8px' });
+  const msgView = h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, 'Pesan dari penguji')), msgBody);
+  function paintThreads() {
+    tv?.destroy(); tv = null;
+    if (openThread) {
+      const t = openThread;
+      const v = adminThread(t.userId, () => loadThreads(false));
+      tv = v;
+      msgBody.replaceChildren(
+        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
+          ui.btn({ icon: 'arrowLeft', cls: 'ghost sm', label: 'Semua pesan', onClick: () => { openThread = null; paintThreads(); } }),
+          h('b', { style: 'flex:1 1 auto;min-width:0;overflow-wrap:anywhere' }, t.email),
+          ui.btn({ label: 'Atur kuota', cls: 'sm', onClick: () => { const u = users.find((y) => y.id === t.userId); if (u) editQuota(u); else { tab = 'users'; show(); ui.toast('Pilih penggunanya di daftar.', { kind: 'warn' }); } } }),
+          ui.btn({ label: t.open ? 'Tutup thread' : 'Buka lagi', cls: 'ghost sm', onClick: async () => { try { await api.post('/admin/threads/' + t.userId + '/reply', { close: t.open }); t.open = !t.open; await loadThreads(false); paintThreads(); } catch (e: any) { ui.toast(e.message, { kind: 'bad' }); } } })),
+        v.el);
+      return;
+    }
+    msgBody.replaceChildren(...(threads.length ? threads.map((t) => h('button', { type: 'button', class: 'acct-link', style: t.open ? '' : 'opacity:.6', onclick: () => { openThread = t; paintThreads(); } },
+      h('span', null, h('b', null, t.email, t.awaiting ? h('i', { class: 'acct-dot' }) : null), h('small', { class: 'acct-sub' }, (t.open ? '' : '(ditutup) ') + (t.last || '(foto)'))))) : [h('p', { class: 'hint' }, 'Belum ada pesan.')]));
+  }
+  async function loadThreads(repaint = true) {
+    try { threads = (await api.get<{ threads: Th[] }>('/admin/threads')).threads || []; if (repaint && !openThread) paintThreads(); } catch { /* optional */ }
   }
   const usersView = h('section', { class: 'card' },
     h('div', { class: 'card-h', style: 'flex-wrap:wrap' }, h('h2', { style: 'flex:1 0 auto' }, 'Pengguna'), h('div', { style: 'flex:1 1 240px;max-width:340px;display:flex;gap:8px;align-items:center;margin-left:auto' }, userSearch, ui.btn({ icon: 'refresh', cls: 'ghost icon sm', title: 'Muat ulang', onClick: () => loadUsers() }))),
@@ -233,8 +247,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
 
   /* ---------- page ---------- */
   const holder = h('div', { class: 'stack', style: 'gap:16px' });
-  const tabs = seg<'invites' | 'users'>([['invites', 'Kode undangan', 'ticket'], ['users', 'Pengguna', 'users']], tab, (v) => { tab = v; show(); history.replaceState(null, '', `#/admin?tab=${v}`); }, 'Bagian admin');
-  function show() { holder.replaceChildren(...(tab === 'invites' ? [invitesView] : [reqView, slotsView, usersView])); if (tab === 'users') { loadUsers(); loadSlots(); loadRequests(); } else loadInvites(); }
+  const tabs = seg<'invites' | 'users' | 'messages'>([['invites', 'Kode undangan', 'ticket'], ['users', 'Pengguna', 'users'], ['messages', 'Pesan', 'chat']], tab, (v) => { tab = v; show(); history.replaceState(null, '', `#/admin?tab=${v}`); }, 'Bagian admin');
+  function show() { holder.replaceChildren(...(tab === 'invites' ? [invitesView] : tab === 'messages' ? [msgView] : [slotsView, usersView])); if (tab === 'users') { loadUsers(); loadSlots(); } else if (tab === 'messages') { loadThreads(); if (!users.length) loadUsers(); } else loadInvites(); }
   root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },
     h('div', null, tabs),
     holder)));

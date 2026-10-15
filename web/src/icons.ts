@@ -27,6 +27,7 @@ const P: Record<string, string> = {
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
 
   // --- app set ---
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>',
   chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>',
   waveform: '<path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4M22 12h-1"/>',
   studio: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>',
