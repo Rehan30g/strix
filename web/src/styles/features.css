@@ -273,3 +273,10 @@ button.acct-link { width: 100%; background: transparent; text-align: left; }
   .ap-photo img { transition: none; }
   .ap-photo.loading { animation: none; }
 }
+
+.ap-notify { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--accent-soft); }
+.ap-notify[hidden] { display: none; }
+.ap-notify > span { display: contents; }
+.ap-notify .ic { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.ap-notify p { margin: 0; flex: 1 1 200px; min-width: 0; font-size: 14px; line-height: 1.4; }
+@media (max-width: 899px) { .ap-notify { margin: 10px 12px 4px; } }

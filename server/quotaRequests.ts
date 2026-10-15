@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from './config.js';
 import { all, db, iso, one, run } from './db.js';
+import { notifyUser } from './push.js';
 
 /* Quota appeals as a chat: a tester whose daily quota ran out writes to the admin (one thread per person), the admin
    answers from the panel (and raises that user's quota override there). A closed thread can be reopened by a new message. */
@@ -111,6 +112,7 @@ export async function quotaRequestRoutes(app: FastifyInstance) {
       if (p.data.image && !saveImage(id, p.data.image)) { run('DELETE FROM quota_msgs WHERE id = ?', id); return reply.code(400).send({ error: 'bad_image' }); }
     }
     run('UPDATE quota_threads SET open = ?, updated_at = ? WHERE user_id = ?', p.data.close ? 0 : 1, now, uid);
+    if (p.data.text || p.data.image) notifyUser(uid, { title: 'Strix', body: (p.data.text || '').slice(0, 90) || 'Photo', url: '/#/messages', tag: 'reply' });
     return { ok: true };
   });
 }

@@ -12,11 +12,10 @@ export type Params = Record<string, string | number>;
 const LS = 'sm2.lang', LS_AT = 'sm2.langAt';
 const isLang = (v: unknown): v is Lang => v === 'id' || v === 'en';
 
-/** Saved choice, else the browser language ('en*' -> English, anything else -> Indonesian). */
+/** Saved choice, else English (the default; Indonesian is one tap away). */
 function detect(): Lang {
   try { const s = localStorage.getItem(LS); if (isLang(s)) return s; } catch { /* private mode */ }
-  const nav = String((navigator.languages && navigator.languages[0]) || navigator.language || '').toLowerCase();
-  return nav.startsWith('en') ? 'en' : 'id';
+  return 'en';
 }
 
 const loaders = import.meta.glob<Record<string, string>>('./i18n/en.json', { import: 'default' });

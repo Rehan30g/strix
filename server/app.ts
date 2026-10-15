@@ -10,6 +10,7 @@ import { config } from './config.js';
 import { accessHook, authRoutes } from './auth.js';
 import { inviteRoutes } from './invites.js';
 import { quotaRequestRoutes } from './quotaRequests.js';
+import { pushRoutes } from './push.js';
 import { adminRoutes } from './admin.js';
 import { llmRoutes } from './llm.js'; // /config /characters /chat (generic /api/llm archived in _archive/server)
 import { ttsRoutes } from './tts.js';
@@ -90,6 +91,7 @@ export async function buildApp() {
   await app.register(authRoutes);
   await app.register(inviteRoutes);
   await app.register(quotaRequestRoutes);
+  await app.register(pushRoutes);
   await app.register(adminRoutes);
   await app.register(llmRoutes);
   await app.register(ttsRoutes);

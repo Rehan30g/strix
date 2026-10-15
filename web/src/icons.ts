@@ -28,6 +28,7 @@ const P: Record<string, string> = {
 
   // --- app set ---
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>',
   message: '<path d="M20 4H4a1 1 0 0 0-1 1v15l4-3.5h13a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1z"/><path d="M7.5 9h9M7.5 12.5h5.5"/>',
   waveform: '<path d="M3 12h1M7 8v8M11 4v16M15 7v10M19 10v4M22 12h-1"/>',
