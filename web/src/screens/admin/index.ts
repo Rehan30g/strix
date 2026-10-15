@@ -186,6 +186,19 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       catch (e: any) { ui.toast(e.message, { kind: 'bad' }); save.disabled = false; }
     };
   }
+  /* ---------- quota requests (a tester whose daily quota ran out asked for more) ---------- */
+  const reqBody = h('div', { class: 'card-b stack', style: 'gap:8px' });
+  const reqView = h('section', { class: 'card', hidden: true }, h('div', { class: 'card-h' }, h('h2', null, 'Permintaan tambahan kuota')), reqBody);
+  async function loadRequests() {
+    try {
+      const rs = (await api.get<{ requests: Array<{ userId: number; email: string; kind: string; note: string; createdAt: string }> }>('/admin/requests')).requests || [];
+      reqView.hidden = !rs.length;
+      reqBody.replaceChildren(...rs.map((r) => h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
+        h('div', { style: 'flex:1 1 220px;min-width:0' }, h('b', null, r.email), h('div', { class: 'hint' }, (r.kind || 'kuota') + (r.note ? ' · ' + r.note : ''))),
+        ui.btn({ label: 'Atur kuota', cls: 'sm', onClick: () => { const u = users.find((x) => x.id === r.userId); if (u) editQuota(u); else ui.toast('Buka tab Pengguna dulu.', { kind: 'warn' }); } }),
+        ui.btn({ label: 'Selesai', cls: 'ghost sm', onClick: async () => { try { await api.del('/admin/requests/' + r.userId); await loadRequests(); } catch (e: any) { ui.toast(e.message, { kind: 'bad' }); } } }))));
+    } catch { /* optional */ }
+  }
   const usersView = h('section', { class: 'card' },
     h('div', { class: 'card-h', style: 'flex-wrap:wrap' }, h('h2', { style: 'flex:1 0 auto' }, 'Pengguna'), h('div', { style: 'flex:1 1 240px;max-width:340px;display:flex;gap:8px;align-items:center;margin-left:auto' }, userSearch, ui.btn({ icon: 'refresh', cls: 'ghost icon sm', title: 'Muat ulang', onClick: () => loadUsers() }))),
     usersBody);
@@ -221,7 +234,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   /* ---------- page ---------- */
   const holder = h('div', { class: 'stack', style: 'gap:16px' });
   const tabs = seg<'invites' | 'users'>([['invites', 'Kode undangan', 'ticket'], ['users', 'Pengguna', 'users']], tab, (v) => { tab = v; show(); history.replaceState(null, '', `#/admin?tab=${v}`); }, 'Bagian admin');
-  function show() { holder.replaceChildren(...(tab === 'invites' ? [invitesView] : [slotsView, usersView])); if (tab === 'users') { loadUsers(); loadSlots(); } else loadInvites(); }
+  function show() { holder.replaceChildren(...(tab === 'invites' ? [invitesView] : [reqView, slotsView, usersView])); if (tab === 'users') { loadUsers(); loadSlots(); loadRequests(); } else loadInvites(); }
   root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },
     h('div', null, tabs),
     holder)));
