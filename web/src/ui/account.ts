@@ -57,8 +57,11 @@ export function openAccount(onLogout: () => void): void {
 
   const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '');
   const aboutLink = h('button', { type: 'button', class: 'acct-link', html: svg('info') }, h('span', null, 'Tentang uji coba', endIso ? h('small', { class: 'acct-sub' }, `Ditutup ${fmtEndDate(endIso)} · ${leftLabel(endIso)}`) : null), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
-  const msgDot = h('i', { class: 'acct-dot', hidden: true });
-  const msgLink = h('button', { type: 'button', class: 'acct-link', html: svg('chat') }, h('span', null, 'Pesan', msgDot), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
+  // "Pesan": only once there is a thread (quota requests), with a note while a reply is unread
+  const msgLink = inbox.exists ? h('button', { type: 'button', class: 'acct-link', html: svg('message') },
+    h('span', null, 'Pesan', inbox.unread ? h('i', { class: 'acct-dot', 'aria-hidden': 'true' }) : null,
+      h('small', { class: 'acct-sub' }, inbox.unread ? 'Ada balasan baru' : 'Soal tambahan kuota')),
+    h('span', { html: svg('chevronRight'), style: 'display:contents' })) : null;
   const introLink = h('button', { type: 'button', class: 'acct-link', html: svg('sparkle') }, h('span', null, 'Tur singkat'), h('span', { html: svg('chevronRight'), style: 'display:contents' }));
   const body = h('div', { class: 'acct' },
     h('div', { class: 'acct-head' }, avatar(me.user.name || me.user.email, me.user.picture, 'lg'),
@@ -67,6 +70,7 @@ export function openAccount(onLogout: () => void): void {
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Tema')), theme),
     h('section', { class: 'acct-sec' }, h('div', { class: 'acct-sec-h' }, h('span', null, 'Suara')), level),
     adv,
+    msgLink,
     aboutLink,
     introLink,
     adminLink,
@@ -74,8 +78,7 @@ export function openAccount(onLogout: () => void): void {
 
   const m = modal({ title: 'Akun', body, cls: 'acct-dlg' });
   aboutLink.onclick = () => { m.close(); import('./about').then((x) => x.openAbout({ testEnd: endIso || '2026-10-20' })).catch(() => {}); };
-  msgLink.onclick = () => { m.close(); location.hash = '#/messages'; };
-  msgDot.hidden = !inbox.unread;
+  if (msgLink) msgLink.onclick = () => { m.close(); location.hash = '#/messages'; };
   introLink.onclick = () => { m.close(); import('./intro').then((x) => x.openIntro()).catch(() => {}); };
   if (adminLink) adminLink.addEventListener('click', () => m.close());
   logout.onclick = async () => { m.close(); try { await api.logout(); } catch { /* ignore */ } onLogout(); };

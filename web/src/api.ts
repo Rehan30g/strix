@@ -22,7 +22,7 @@ const listeners = new Set<Listener>();
 export function onApiEvent(fn: Listener): () => void { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(e: ApiEvent) { for (const l of listeners) { try { l(e); } catch (err) { console.error(err); } } }
 
-const QUOTA_LABEL: Record<string, string> = { llm: 'chat AI', tts: 'karakter TTS', vc: 'detik Voice Changer', stt: 'detik input suara', search: 'pencarian web', decide: 'keputusan percakapan', clone: 'clone suara', clones: 'clone suara', call: 'panggilan persona', memory: 'ingatan persona' };
+export const QUOTA_LABEL: Record<string, string> = { llm: 'chat AI', tts: 'karakter TTS', vc: 'detik Voice Changer', stt: 'detik input suara', search: 'pencarian web', decide: 'keputusan percakapan', clone: 'clone suara', clones: 'clone suara', call: 'panggilan persona', memory: 'ingatan persona' };
 const MESSAGES: Record<string, string> = {
   invite_required: 'Akun kamu belum aktif. Masukkan kode undangan dulu.',
   suspended: 'Akun kamu ditangguhkan. Hubungi admin.',

@@ -4,6 +4,7 @@ import type { ScreenCtx } from '../../ctx';
 import { h, fmtDate, relTime, fmtNum, avatar } from '../../ui/dom';
 import { field, seg } from '../../ui/controls';
 import { adminThread } from '../../ui/appeal';
+import { QUOTA_LABEL } from '../../api';
 
 interface Invite { id: number; code: string; maxUses: number; usedCount: number; expiresAt: string; note: string | null; revoked: boolean; status: 'active' | 'expired' | 'full' | 'revoked'; createdBy: string | null; createdAt: string; users: string[] }
 interface Limits { llmReqPerDay: number; ttsCharsPerDay: number; maxClones: number; vcSecPerDay?: number; sttSecPerDay?: number }
@@ -148,7 +149,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       })))));
   }
   async function loadUsers() {
-    try { users = (await api.get<{ users: AdminUser[] }>('/admin/users')).users || []; paintUsers(); }
+    try { users = (await api.get<{ users: AdminUser[] }>('/admin/users')).users || []; paintUsers(); if (sel != null) paintHead(); }
     catch (e: any) { usersBody.replaceChildren(h('div', { class: 'notice bad', style: 'margin:16px', html: S('alert') }, h('span', null, e.message))); }
   }
   async function setStatus(u: AdminUser, action: 'suspend' | 'unsuspend') {
@@ -187,32 +188,94 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       catch (e: any) { ui.toast(e.message, { kind: 'bad' }); save.disabled = false; }
     };
   }
-  /* ---------- messages: chat threads with testers (quota appeals) ---------- */
-  interface Th { userId: number; email: string; kind: string; open: boolean; awaiting: boolean; last: string; updatedAt: string }
-  let threads: Th[] = [], openThread: Th | null = null, tv: { destroy: () => void } | null = null;
-  const msgBody = h('div', { class: 'card-b stack', style: 'gap:8px' });
-  const msgView = h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, 'Pesan dari penguji')), msgBody);
-  function paintThreads() {
-    tv?.destroy(); tv = null;
-    if (openThread) {
-      const t = openThread;
-      const v = adminThread(t.userId, () => loadThreads(false));
-      tv = v;
-      msgBody.replaceChildren(
-        h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
-          ui.btn({ icon: 'arrowLeft', cls: 'ghost sm', label: 'Semua pesan', onClick: () => { openThread = null; paintThreads(); } }),
-          h('b', { style: 'flex:1 1 auto;min-width:0;overflow-wrap:anywhere' }, t.email),
-          ui.btn({ label: 'Atur kuota', cls: 'sm', onClick: () => { const u = users.find((y) => y.id === t.userId); if (u) editQuota(u); else { tab = 'users'; show(); ui.toast('Pilih penggunanya di daftar.', { kind: 'warn' }); } } }),
-          ui.btn({ label: t.open ? 'Tutup thread' : 'Buka lagi', cls: 'ghost sm', onClick: async () => { try { await api.post('/admin/threads/' + t.userId + '/reply', { close: t.open }); t.open = !t.open; await loadThreads(false); paintThreads(); } catch (e: any) { ui.toast(e.message, { kind: 'bad' }); } } })),
-        v.el);
-      return;
+  /* ---------- messages: chat threads with testers (quota appeals) ----------
+     Desktop: list and thread side by side. Phones: the list, then the thread with a back button. */
+  interface Th { userId: number; email: string; name?: string; picture?: string | null; kind: string; open: boolean; awaiting: boolean; last: string; lastFromAdmin?: boolean; lastImage?: boolean; lastAt?: string; updatedAt: string }
+  let threads: Th[] = [], sel: number | null = null, threadsLoaded = false, threadsFailed = false;
+  let tv: ReturnType<typeof adminThread> | null = null, tvUser = 0;
+  const thList = h('div', { class: 'am-list', role: 'list', 'aria-label': 'Percakapan' });
+  const thCount = h('span', { class: 'badge accent', hidden: true });
+  const paneHead = h('div', { class: 'am-th' });
+  const paneBody = h('div', { class: 'am-tb' });
+  const pane = h('div', { class: 'am-pane' }, paneHead, paneBody);
+  const msgView = h('section', { class: 'card am' },
+    h('div', { class: 'am-side' }, h('div', { class: 'am-sh' }, h('h2', null, 'Pesan dari penguji'), thCount), thList),
+    pane);
+  const thName = (t: Th) => t.name || t.email;
+  const thPreview = (t: Th) => (t.lastFromAdmin ? 'Kamu: ' : '') + (t.last || (t.lastImage ? 'Foto' : ''));
+  const kindLabel = (k: string) => (QUOTA_LABEL[k] ? 'Kuota ' + QUOTA_LABEL[k] : '');
+  const shortTime = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso), now = new Date();
+    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    if (now.getTime() - d.getTime() < 6 * 864e5) return d.toLocaleDateString('id-ID', { weekday: 'short' });
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  };
+  const seg2Count = (n: number) => {
+    const b = [...tabs.querySelectorAll('button')].at(-1); if (!b) return;
+    let c = b.querySelector<HTMLElement>('.seg-count');
+    if (!c) { c = h('span', { class: 'seg-count', 'aria-hidden': 'true' }); b.append(c); }
+    c.hidden = !n; c.textContent = String(n);
+    b.setAttribute('aria-label', n ? `Pesan, ${n} menunggu balasan` : 'Pesan');
+  };
+  function paintList() {
+    const waiting = threads.filter((t) => t.awaiting).length;
+    thCount.hidden = !waiting; thCount.textContent = `${waiting} menunggu`;
+    seg2Count(waiting);
+    if (!threadsLoaded) { thList.replaceChildren(...(threadsFailed ? [h('div', { class: 'notice bad', style: 'margin:12px', html: S('alert') }, h('span', null, 'Daftar pesan belum bisa dimuat.'))] : [0, 1, 2].map(() => h('div', { class: 'am-skel' }, h('span', { class: 'skel', style: 'width:36px;height:36px;border-radius:50%' }), h('span', { class: 'skel', style: 'flex:1;height:30px' }))))); return; }
+    if (!threads.length) { thList.replaceChildren(h('div', { class: 'empty' }, h('div', { class: 'empty-ic', html: S('message') }), h('h3', null, 'Belum ada pesan'), h('p', null, 'Penguji yang kehabisan kuota bisa minta tambahan, dan pesannya muncul di sini.'))); return; }
+    const sorted = [...threads].sort((a, b) => Number(b.awaiting) - Number(a.awaiting) || Number(b.open) - Number(a.open) || String(b.lastAt || b.updatedAt).localeCompare(String(a.lastAt || a.updatedAt)));
+    thList.replaceChildren(...sorted.map((t) => {
+      const meta = [kindLabel(t.kind), t.open ? '' : 'Ditutup'].filter(Boolean).join(' · ');
+      const b = h('button', { type: 'button', class: 'am-item' + (t.awaiting ? ' awaiting' : '') + (t.open ? '' : ' closed'), role: 'listitem', 'aria-current': sel === t.userId ? 'true' : null,
+        'aria-label': `${thName(t)}${t.awaiting ? ', menunggu balasan' : ''}${t.open ? '' : ', ditutup'}. ${thPreview(t)}` },
+        avatar(thName(t), t.picture),
+        h('span', { class: 'am-i-b' },
+          h('span', { class: 'am-i-top' }, h('b', null, thName(t)), h('time', { dateTime: t.lastAt || '', title: t.lastAt ? fmtDate(t.lastAt) : '' }, shortTime(t.lastAt || t.updatedAt))),
+          h('span', { class: 'am-i-prev' }, h('span', null, thPreview(t)), t.awaiting ? h('i', { class: 'am-dot', title: 'Menunggu balasan' }) : null),
+          meta ? h('span', { class: 'am-i-meta' }, meta) : null));
+      b.onclick = () => select(t.userId);
+      return b;
+    }));
+  }
+  function paintHead() {
+    const t = threads.find((x) => x.userId === sel);
+    if (!t) { paneHead.replaceChildren(); return; }
+    const u = users.find((y) => y.id === t.userId);
+    const usage = u ? `AI ${fmtNum(u.usageToday.llm)}/${fmtNum(u.limits.llmReqPerDay)} · TTS ${fmtNum(u.usageToday.tts)}/${fmtNum(u.limits.ttsCharsPerDay)}` : '';
+    const sub = [t.name ? t.email : '', kindLabel(t.kind)].filter(Boolean).join(' · ');
+    paneHead.replaceChildren(
+      h('button', { type: 'button', class: 'btn ghost icon am-back', 'aria-label': 'Kembali ke daftar pesan', html: S('arrowLeft'), onclick: () => select(null) }),
+      avatar(thName(t), t.picture),
+      h('div', { class: 'am-th-t' }, h('b', null, thName(t), t.open ? null : h('span', { class: 'badge', style: 'margin-left:8px;height:20px;font-size:11.5px' }, 'Ditutup')),
+        sub ? h('span', null, sub) : null, usage ? h('span', { class: 'am-usage' }, 'Hari ini: ' + usage) : null),
+      h('div', { class: 'am-th-a' },
+        ui.btn({ label: 'Atur kuota', icon: 'gauge', cls: 'sm soft', onClick: () => { if (u) editQuota(u); else { tab = 'users'; tabs.setValue('users'); show(); ui.toast('Pilih penggunanya di daftar.', { kind: 'warn' }); } } }),
+        ui.btn({ label: t.open ? 'Tutup thread' : 'Buka lagi', cls: 'sm ghost', title: t.open ? 'Tandai selesai' : 'Buka lagi', onClick: async () => {
+          try { await api.post('/admin/threads/' + t.userId + '/reply', { close: t.open }); t.open = !t.open; await loadThreads(); void tv?.refresh(); }
+          catch (e: any) { ui.toast(e.message, { kind: 'bad' }); }
+        } })));
+  }
+  function select(id: number | null) {
+    sel = id;
+    msgView.classList.toggle('has-sel', id != null);
+    if (id !== tvUser) {
+      tv?.destroy(); tv = null; tvUser = 0;
+      if (id != null) {
+        tv = adminThread(id, () => void loadThreads(), () => threads.find((x) => x.userId === id)?.open ?? true);
+        tvUser = id;
+        paneBody.replaceChildren(tv.el);
+        if (matchMedia('(pointer: fine)').matches) tv.focus();
+      } else paneBody.replaceChildren(h('div', { class: 'empty am-none' }, h('div', { class: 'empty-ic', html: S('message') }), h('h3', null, 'Pilih percakapan'), h('p', null, 'Pesan dari penguji muncul di daftar sebelah kiri.')));
     }
-    msgBody.replaceChildren(...(threads.length ? threads.map((t) => h('button', { type: 'button', class: 'acct-link', style: t.open ? '' : 'opacity:.6', onclick: () => { openThread = t; paintThreads(); } },
-      h('span', null, h('b', null, t.email, t.awaiting ? h('i', { class: 'acct-dot' }) : null), h('small', { class: 'acct-sub' }, (t.open ? '' : '(ditutup) ') + (t.last || '(foto)'))))) : [h('p', { class: 'hint' }, 'Belum ada pesan.')]));
+    paintHead(); paintList();
   }
-  async function loadThreads(repaint = true) {
-    try { threads = (await api.get<{ threads: Th[] }>('/admin/threads')).threads || []; if (repaint && !openThread) paintThreads(); } catch { /* optional */ }
+  async function loadThreads() {
+    try { threads = (await api.get<{ threads: Th[] }>('/admin/threads')).threads || []; threadsLoaded = true; threadsFailed = false; }
+    catch { threadsFailed = !threadsLoaded; }
+    paintList(); paintHead();
   }
+  const thTimer = setInterval(() => { if (tab === 'messages' && !document.hidden) void loadThreads(); }, 15000);
   const usersView = h('section', { class: 'card' },
     h('div', { class: 'card-h', style: 'flex-wrap:wrap' }, h('h2', { style: 'flex:1 0 auto' }, 'Pengguna'), h('div', { style: 'flex:1 1 240px;max-width:340px;display:flex;gap:8px;align-items:center;margin-left:auto' }, userSearch, ui.btn({ icon: 'refresh', cls: 'ghost icon sm', title: 'Muat ulang', onClick: () => loadUsers() }))),
     usersBody);
@@ -246,14 +309,24 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   const slotsView = h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, 'Slot suara')), slotBody);
 
   /* ---------- page ---------- */
-  const holder = h('div', { class: 'stack', style: 'gap:16px' });
-  const tabs = seg<'invites' | 'users' | 'messages'>([['invites', 'Kode undangan', 'ticket'], ['users', 'Pengguna', 'users'], ['messages', 'Pesan', 'chat']], tab, (v) => { tab = v; show(); history.replaceState(null, '', `#/admin?tab=${v}`); }, 'Bagian admin');
-  function show() { holder.replaceChildren(...(tab === 'invites' ? [invitesView] : tab === 'messages' ? [msgView] : [slotsView, usersView])); if (tab === 'users') { loadUsers(); loadSlots(); } else if (tab === 'messages') { loadThreads(); if (!users.length) loadUsers(); } else loadInvites(); }
-  root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },
+  const holder = h('div', { class: 'stack adm-holder', style: 'gap:16px' });
+  const tabs = seg<'invites' | 'users' | 'messages'>([['invites', 'Kode undangan', 'ticket'], ['users', 'Pengguna', 'users'], ['messages', 'Pesan', 'message']], tab, (v) => { tab = v; show(); history.replaceState(null, '', `#/admin?tab=${v}`); }, 'Bagian admin');
+  tabs.classList.add('adm-tabs');
+  const page = h('div', { class: 'page' }, h('div', { class: 'page-inner' },
     h('div', null, tabs),
-    holder)));
+    holder));
+  // the Pesan tab fills the screen (list / thread scroll inside, the composer stays at the bottom)
+  function show() {
+    root.classList.toggle('fill', tab === 'messages'); page.classList.toggle('am-mode', tab === 'messages');
+    holder.replaceChildren(...(tab === 'invites' ? [invitesView] : tab === 'messages' ? [msgView] : [slotsView, usersView]));
+    if (tab === 'users') { loadUsers(); loadSlots(); } else if (tab === 'messages') { loadThreads(); if (!users.length) loadUsers(); } else loadInvites();
+  }
+  root.append(page);
   const skel = () => h('div', { style: 'padding:16px' }, h('div', { class: 'stack', style: 'gap:10px' }, ...[0, 1, 2].map(() => h('div', { class: 'skel', style: 'height:36px' }))));
   invBody.append(skel()); usersBody.append(skel());
+  select(null);
   show();
-  return () => {};
+  // waiting count on the Pesan tab even before it is opened
+  if (tab !== 'messages') void loadThreads();
+  return () => { tv?.destroy(); clearInterval(thTimer); };
 }

@@ -39,14 +39,27 @@ export function mountShell(root: HTMLElement, onLogout: () => void): () => void 
     paintAccount();
     return b;
   };
-  // "Pesan": only there once a thread exists, with a dot while a reply is unread
+  // "Pesan": only there once a thread exists, with a count badge while replies are unread. The sidebar one looks like a
+  // nav item; both get aria-current on the Pesan page (the top bar one then hides: you are already there).
   const msgButtons: HTMLAnchorElement[] = [];
   const messageButton = (cls: string) => {
-    const a = h('a', { class: 'msg-btn ' + cls, href: '#/messages', 'aria-label': 'Pesan', title: 'Pesan', hidden: true, html: svg('chat') }, h('i', { class: 'msg-dot', hidden: true })) as HTMLAnchorElement;
+    const badge = h('i', { class: 'msg-dot', hidden: true, 'aria-hidden': 'true' });
+    const a = (cls === 'side-msg'
+      ? h('a', { class: 'side-item side-msg', href: '#/messages', hidden: true }, h('span', { class: 'nav-ic', html: svg('message') }, badge), h('span', { class: 'nav-l' }, 'Pesan'))
+      : h('a', { class: 'msg-btn ' + cls, href: '#/messages', title: 'Pesan', hidden: true, html: svg('message') }, badge)) as HTMLAnchorElement;
     msgButtons.push(a);
+    (navLinks.get('messages') || navLinks.set('messages', []).get('messages')!).push(a);
     return a;
   };
-  const paintInbox = () => { for (const a of msgButtons) { a.hidden = !inbox.exists; (a.querySelector('.msg-dot') as HTMLElement).hidden = !inbox.unread; } };
+  const paintInbox = () => {
+    for (const a of msgButtons) {
+      a.hidden = !inbox.exists;
+      const dot = a.querySelector('.msg-dot') as HTMLElement;
+      dot.hidden = !inbox.unread;
+      dot.textContent = inbox.unread > 9 ? '9+' : String(inbox.unread || '');
+      a.setAttribute('aria-label', inbox.unread ? `Pesan, ${inbox.unread} belum dibaca` : 'Pesan');
+    }
+  };
   const unInbox = onInbox(paintInbox);
   void refreshMessages();
   const inboxTimer = setInterval(() => { if (!document.hidden) void refreshMessages(); }, 60000);

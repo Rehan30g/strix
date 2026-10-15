@@ -90,12 +90,15 @@ export async function quotaRequestRoutes(app: FastifyInstance) {
 
   const admin = { config: { access: 'admin' as const } };
   app.get('/api/admin/threads', admin, async () => ({
-    threads: all<{ user_id: number; email: string; kind: string; open: number; updated_at: number; last_admin: number; last_text: string }>(
-      `SELECT t.user_id, u.email, t.kind, t.open, t.updated_at,
+    threads: all<{ user_id: number; email: string; name: string | null; picture: string | null; kind: string; open: number; updated_at: number; last_admin: number; last_text: string; last_image: number; last_at: number | null }>(
+      `SELECT t.user_id, u.email, u.name, u.picture, t.kind, t.open, t.updated_at,
               (SELECT from_admin FROM quota_msgs m WHERE m.user_id = t.user_id ORDER BY id DESC LIMIT 1) AS last_admin,
-              (SELECT text FROM quota_msgs m WHERE m.user_id = t.user_id ORDER BY id DESC LIMIT 1) AS last_text
+              (SELECT text FROM quota_msgs m WHERE m.user_id = t.user_id ORDER BY id DESC LIMIT 1) AS last_text,
+              (SELECT image FROM quota_msgs m WHERE m.user_id = t.user_id ORDER BY id DESC LIMIT 1) AS last_image,
+              (SELECT created_at FROM quota_msgs m WHERE m.user_id = t.user_id ORDER BY id DESC LIMIT 1) AS last_at
        FROM quota_threads t JOIN users u ON u.id = t.user_id ORDER BY t.open DESC, t.updated_at DESC`)
-      .map((t) => ({ userId: t.user_id, email: t.email, kind: t.kind, open: !!t.open, awaiting: !!t.open && !t.last_admin, last: t.last_text, updatedAt: iso(t.updated_at) })),
+      .map((t) => ({ userId: t.user_id, email: t.email, name: t.name || '', picture: t.picture || null, kind: t.kind, open: !!t.open, awaiting: !!t.open && !t.last_admin,
+        last: t.last_text, lastFromAdmin: !!t.last_admin, lastImage: !!t.last_image, lastAt: iso(t.last_at ?? t.updated_at), updatedAt: iso(t.updated_at) })),
   }));
   app.get('/api/admin/threads/:id', admin, async (req) => ({ messages: msgsOf(idOf(req.params)) }));
   app.post('/api/admin/threads/:id/reply', { ...bigBody, ...admin }, async (req, reply) => {

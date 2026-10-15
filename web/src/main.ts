@@ -16,6 +16,7 @@ import { renderLogin, renderRedeem, renderSuspended, renderBootError } from './s
 import { toast } from './ui/overlay';
 import { player } from './player';
 import { h } from './ui/dom';
+import { svg } from './icons';
 import { hold, release } from './lib/hold';
 import { isAboutSeen } from './ui/about';
 
@@ -76,10 +77,14 @@ async function boot() {
 function quotaNotice(kind: string, message: string) {
   const text = message.split(' Butuh tambahan?')[0];
   import('./ui/overlay').then(({ modal }) => {
-    const body = h('div', null, h('p', { style: 'margin:0' }, text), h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Kuota dibatasi karena kredit uji coba terbatas. Tunggu sampai direset, atau minta tambahan lewat pesan.'));
+    const body = h('div', { class: 'qn' },
+      h('div', { class: 'qn-ic', html: svg('gauge') }),
+      h('div', { class: 'qn-b' },
+        h('p', { class: 'qn-t' }, text),
+        h('p', { class: 'qn-s' }, 'Kuota dibatasi karena kredit uji coba ini terbatas. Kamu bisa tunggu sampai direset, atau minta tambahan ke orang yang mengundangmu.')));
     const close = h('button', { type: 'button', class: 'btn ghost' }, 'Tunggu saja') as HTMLButtonElement;
-    const ask = h('button', { type: 'button', class: 'btn primary' }, 'Minta tambahan') as HTMLButtonElement;
-    const dlg = modal({ title: 'Kuota habis', body, key: 'quota-notice', actions: [close, ask] });
+    const ask = h('button', { type: 'button', class: 'btn primary', html: svg('message') }, h('span', null, 'Minta tambahan')) as HTMLButtonElement;
+    const dlg = modal({ title: 'Kuota habis', body, key: 'quota-notice', cls: 'qn-dlg', actions: [close, ask] });
     close.onclick = () => dlg.close();
     ask.onclick = () => { dlg.close(); location.hash = '#/messages?kind=' + encodeURIComponent(kind); };
   }).catch(() => toast(message, { kind: 'warn', title: 'Kuota habis', timeout: 8000 }));

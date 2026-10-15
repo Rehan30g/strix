@@ -20,7 +20,7 @@ export const ROUTES: RouteDef[] = [
   { name: 'voices', label: 'Voices', title: 'Voices', icon: 'voices', load: () => import('./screens/voices/index'), tab: true },
   // group call (Strix + Lena, or any personas): reached from the Chat persona sheet / menus, not a tab
   { name: 'duo', label: 'Panggilan', title: 'Panggilan', icon: 'phone', load: () => import('./screens/duo/index'), wide: true },
-  { name: 'messages', label: 'Pesan', title: 'Pesan', icon: 'chat', load: () => import('./screens/messages/index') },
+  { name: 'messages', label: 'Pesan', title: 'Pesan', icon: 'message', load: () => import('./screens/messages/index') },
   { name: 'admin', label: 'Admin', title: 'Admin', icon: 'shield', load: () => import('./screens/admin/index'), admin: true, wide: true },
 ];
 
