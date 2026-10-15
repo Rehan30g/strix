@@ -103,7 +103,7 @@ export async function toError(r: Response, path: string): Promise<ApiError> {
     if (code === 'quota') {
       const kind = String(data?.kind || '');
       const when = resetText(data?.resetAt);
-      message = kind === 'clone' ? 'Batas jumlah clone suara untuk akunmu sudah tercapai.' : `Kuota harian ${QUOTA_LABEL[kind] || kind} habis.${when ? ` Direset ${when}.` : ''}`;
+      message = kind === 'clone' ? 'Batas jumlah clone suara untuk akunmu sudah tercapai. Butuh tambahan? Hubungi orang yang mengundangmu.' : `Kuota harian ${QUOTA_LABEL[kind] || kind} habis.${when ? ` Direset ${when}.` : ''} Butuh tambahan? Hubungi orang yang mengundangmu.`;
       emit({ type: 'quota', kind, resetAt: data?.resetAt, message });
     } else {
       message = MESSAGES.rate_limited;
