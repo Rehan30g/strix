@@ -174,6 +174,8 @@ function addColumnIfMissing(table: string, column: string, ddl: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
+addColumnIfMissing('users', 'email_key', 'TEXT'); // canonical email (gmail dots / +tags removed): one person, one account
+addColumnIfMissing('users', 'device_id', 'TEXT'); // random per-browser id (cookie) set when an invite is redeemed
 addColumnIfMissing('usage', 'vc_sec', 'INTEGER NOT NULL DEFAULT 0'); // Voice Changer seconds (v2 lite)
 addColumnIfMissing('usage', 'stt_sec', 'INTEGER NOT NULL DEFAULT 0'); // speech-to-text (Scribe Realtime) seconds
 addColumnIfMissing('usage', 'search_req', 'INTEGER NOT NULL DEFAULT 0'); // chat web_search tool executions

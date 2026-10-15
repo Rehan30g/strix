@@ -34,6 +34,8 @@ const MESSAGES: Record<string, string> = {
   code_expired: 'Kode ini sudah kedaluwarsa.',
   code_revoked: 'Kode ini sudah dicabut.',
   invalid_code: 'Kode tidak ditemukan. Periksa lagi penulisannya.',
+  duplicate_account: 'Email ini sama dengan akun lain yang sudah memakai undangan. Satu orang satu akun.',
+  device_used: 'Perangkat ini sudah dipakai akun lain. Minta kode baru ke pengundang kalau ini orang yang berbeda.',
   already_redeemed: 'Akun kamu sudah memakai kode undangan lain.',
   not_found: 'Tidak ditemukan.',
   voice_forbidden: 'Suara ini belum ada di koleksimu. Tambahkan dulu dari Library (tab Voices).',
