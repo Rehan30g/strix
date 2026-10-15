@@ -1,5 +1,7 @@
 /* Microphone recorder (MediaRecorder) with a live level meter. Used by Voice Changer and voice cloning. */
 
+import { t } from '../i18n';
+
 export interface Recording { file: File; duration: number }
 export interface Recorder {
   /** Seconds since start. */
@@ -15,11 +17,11 @@ export interface Recorder {
 export const canRecord = () => !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined';
 
 export async function startRecording(opts: { maxSec?: number; name?: string; onAutoStop?: (r: Recording | null) => void } = {}): Promise<Recorder> {
-  if (!canRecord()) throw new Error('Browser ini tidak mendukung perekaman audio.');
+  if (!canRecord()) throw new Error(t('Browser ini tidak mendukung perekaman audio.'));
   let stream: MediaStream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true } }); }
   catch (e: any) {
-    throw new Error(e?.name === 'NotAllowedError' ? 'Izin mikrofon ditolak. Aktifkan di pengaturan browser.' : e?.name === 'NotFoundError' ? 'Mikrofon tidak ditemukan.' : 'Mikrofon tidak bisa dipakai.');
+    throw new Error(e?.name === 'NotAllowedError' ? t('Izin mikrofon ditolak. Aktifkan di pengaturan browser.') : e?.name === 'NotFoundError' ? t('Mikrofon tidak ditemukan.') : t('Mikrofon tidak bisa dipakai.'));
   }
   const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
   const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);

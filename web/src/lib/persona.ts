@@ -5,6 +5,7 @@ import { settings } from '../settings';
 import { personaOrb, type CustomOrb } from '../ui/orb';
 import { BRAND } from './brand';
 import { forgetMemory } from './memory';
+import { t } from '../i18n';
 
 export interface CustomPersona {
   id: string;            // 'c_xxxxxxxx'
@@ -90,7 +91,7 @@ export function langKey(s: unknown, fallback = 'en'): string {
 }
 /** 'auto' = the persona mirrors the user's language (the built-in BRAND persona); no `language` is sent. */
 export const AUTO = 'auto';
-export const langLabel = (k: string) => (k === AUTO ? 'Ikuti bahasamu' : LANGS.find((l) => l[0] === k)?.[1] || 'English');
+export const langLabel = (k: string) => (k === AUTO ? t('Ikuti bahasamu') : LANGS.find((l) => l[0] === k)?.[1] || 'English');
 export const langName = (k: string) => (k === AUTO ? '' : LANGS.find((l) => l[0] === k)?.[2] || 'English');
 export const sttLocale = (k: string) => (k === AUTO ? (navigator.language || 'en-US') : LANGS.find((l) => l[0] === k)?.[3] || 'en-US');
 
@@ -173,7 +174,7 @@ export function fromCharacter(c: Character & { description?: string; lang?: stri
 }
 export function fromCustom(c: CustomPersona): Persona {
   return {
-    id: c.id, builtin: false, name: c.name || 'Persona', sub: c.description || '', icon: 'sparkle',
+    id: c.id, builtin: false, name: c.name || t('Persona'), sub: c.description || '', icon: 'sparkle',
     defaultVoiceId: c.voiceId || DEFAULT_VOICE, voiceId: c.voiceId || DEFAULT_VOICE,
     lang: c.lang || 'en', accent: c.accent || '', greeting: c.greeting || '', tools: [], custom: c, orb: c.orb || null,
   };
@@ -269,7 +270,7 @@ export async function streamChat(a: {
   });
   if (noMemory) return { reply: '', verdict: null, noMemory };
   if (err && !reply) throw new Error(err);
-  if (!reply && !verdict && !call) throw new Error('Balasan kosong dari model. Coba kirim lagi.');
+  if (!reply && !verdict && !call) throw new Error(t('Balasan kosong dari model. Coba kirim lagi.'));
   return { reply, verdict, call };
 }
 

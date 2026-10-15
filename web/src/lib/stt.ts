@@ -10,6 +10,7 @@
    (session.backend === 'webspeech', onFallback fires) so the UI can mark it. */
 import { api, ApiError } from '../api';
 import { hasSpeech, listen } from './speech';
+import { t } from '../i18n';
 
 export type SttMode = 'ptt' | 'vad';
 export type SttState = 'connecting' | 'listening' | 'finishing' | 'closed';
@@ -75,20 +76,20 @@ export const sttSupported = (): boolean =>
   (!!navigator.mediaDevices?.getUserMedia && typeof WebSocket !== 'undefined' && !!(window.AudioContext || (window as any).webkitAudioContext)) || hasSpeech();
 
 const MIC_ERR: Record<string, [string, string]> = {
-  NotAllowedError: ['mic_denied', 'Izin mikrofon ditolak. Izinkan mikrofon untuk situs ini di pengaturan browser.'],
-  SecurityError: ['mic_denied', 'Izin mikrofon ditolak. Izinkan mikrofon untuk situs ini di pengaturan browser.'],
-  NotFoundError: ['mic_missing', 'Mikrofon tidak ditemukan.'],
-  OverconstrainedError: ['mic_missing', 'Mikrofon tidak ditemukan.'],
-  NotReadableError: ['mic_busy', 'Mikrofon sedang dipakai aplikasi lain.'],
-  AbortError: ['mic_busy', 'Mikrofon tidak bisa dibuka.'],
+  NotAllowedError: ['mic_denied', t('Izin mikrofon ditolak. Izinkan mikrofon untuk situs ini di pengaturan browser.')],
+  SecurityError: ['mic_denied', t('Izin mikrofon ditolak. Izinkan mikrofon untuk situs ini di pengaturan browser.')],
+  NotFoundError: ['mic_missing', t('Mikrofon tidak ditemukan.')],
+  OverconstrainedError: ['mic_missing', t('Mikrofon tidak ditemukan.')],
+  NotReadableError: ['mic_busy', t('Mikrofon sedang dipakai aplikasi lain.')],
+  AbortError: ['mic_busy', t('Mikrofon tidak bisa dibuka.')],
 };
 const WS_ERR: Record<string, string> = {
-  auth_error: 'Token suara ditolak. Coba lagi.',
-  quota_exceeded: 'Kuota layanan pengenalan suara (ElevenLabs) habis.',
-  rate_limited: 'Layanan pengenalan suara sedang sibuk. Coba lagi sebentar.',
-  resource_exhausted: 'Layanan pengenalan suara sedang sibuk. Coba lagi sebentar.',
-  queue_overflow: 'Koneksi terlalu lambat untuk pengenalan suara.',
-  unaccepted_terms: 'Layanan pengenalan suara belum diaktifkan di akun ElevenLabs.',
+  auth_error: t('Token suara ditolak. Coba lagi.'),
+  quota_exceeded: t('Kuota layanan pengenalan suara (ElevenLabs) habis.'),
+  rate_limited: t('Layanan pengenalan suara sedang sibuk. Coba lagi sebentar.'),
+  resource_exhausted: t('Layanan pengenalan suara sedang sibuk. Coba lagi sebentar.'),
+  queue_overflow: t('Koneksi terlalu lambat untuk pengenalan suara.'),
+  unaccepted_terms: t('Layanan pengenalan suara belum diaktifkan di akun ElevenLabs.'),
 };
 
 /** ISO-639-1 code for Scribe (language_code), '' = auto */
@@ -215,7 +216,7 @@ export function startStt(o: SttOpts): SttSession {
     sentBytes += bytes.length;
     if (tok && sentBytes / (RATE * 2) >= tok.maxSessionSec && !stopping) {
       if (o.continuous && mode === 'vad') { renew(); return; }
-      o.onError?.('session_limit', `Batas ${Math.round(tok.maxSessionSec / 60) || 1} menit per sesi tercapai.`);
+      o.onError?.('session_limit', t('Batas {min} menit per sesi tercapai.', { min: Math.round(tok.maxSessionSec / 60) || 1 }));
       stop();
     }
   }
@@ -262,9 +263,9 @@ export function startStt(o: SttOpts): SttSession {
     if (firstToken) { firstToken = false; return takeToken(); }
     return api.post<TokenRes>('/stt/token', {});
   }
-  function connect(t: TokenRes) {
-    const u = new URL(t.url);
-    u.searchParams.set('token', t.token);
+  function connect(tok: TokenRes) {
+    const u = new URL(tok.url);
+    u.searchParams.set('token', tok.token);
     u.searchParams.set('commit_strategy', mode === 'vad' ? 'vad' : 'manual');
     const lc = langCode(o.lang);
     if (lc) u.searchParams.set('language_code', lc);
@@ -275,7 +276,7 @@ export function startStt(o: SttOpts): SttSession {
     const w = new WebSocket(u.toString());
     ws = w;
     if (connectT) clearTimeout(connectT);
-    connectT = setTimeout(() => { if (ws === w && w.readyState !== WebSocket.OPEN) { closeWs(); retryOrFail('timeout', 'Koneksi pengenalan suara terlalu lama.'); } }, 9000);
+    connectT = setTimeout(() => { if (ws === w && w.readyState !== WebSocket.OPEN) { closeWs(); retryOrFail('timeout', t('Koneksi pengenalan suara terlalu lama.')); } }, 9000);
     w.onmessage = (e) => {
       let m: any; try { m = JSON.parse(String(e.data)); } catch { return; }
       const type = m?.message_type;
@@ -302,14 +303,14 @@ export function startStt(o: SttOpts): SttSession {
         if (stopping) finish(true);
       } else if (type === 'session_time_limit_exceeded') {
         if (o.continuous && mode === 'vad') { renew(); return; }
-        closeWs(); retryOrFail(type, 'Sesi pengenalan suara berakhir.');
+        closeWs(); retryOrFail(type, t('Sesi pengenalan suara berakhir.'));
       } else if (type === 'commit_throttled' || type === 'warning') {
         /* ignore */
       } else if (type && (m.error || /error|exceeded|limited|exhausted|overflow|invalid|unaccepted/.test(type))) {
         if (stopping && type === 'input_error') { finish(true); return; }
         closeWs();
-        if (type === 'auth_error' || type === 'transcriber_error' || type === 'queue_overflow' || type === 'resource_exhausted') retryOrFail(type, WS_ERR[type] || 'Pengenalan suara gagal.');
-        else fail(type, WS_ERR[type] || `Pengenalan suara gagal: ${String(m.error || type).slice(0, 120)}`);
+        if (type === 'auth_error' || type === 'transcriber_error' || type === 'queue_overflow' || type === 'resource_exhausted') retryOrFail(type, WS_ERR[type] || t('Pengenalan suara gagal.'));
+        else fail(type, WS_ERR[type] || t('Pengenalan suara gagal: {error}', { error: String(m.error || type).slice(0, 120) }));
       }
     };
     w.onclose = (ev) => {
@@ -317,7 +318,7 @@ export function startStt(o: SttOpts): SttSession {
       ws = null;
       if (ended) return;
       if (stopping) { finish(true); return; }
-      retryOrFail('closed', ev.code === 1006 ? 'Koneksi pengenalan suara terputus.' : `Koneksi pengenalan suara ditutup (${ev.code}).`);
+      retryOrFail('closed', ev.code === 1006 ? t('Koneksi pengenalan suara terputus.') : t('Koneksi pengenalan suara ditutup ({code}).', { code: ev.code }));
     };
     w.onerror = () => { /* onclose follows */ };
   }
@@ -391,11 +392,11 @@ export function startStt(o: SttOpts): SttSession {
 
   function tokenMessage(e: any): string {
     if (e instanceof ApiError) {
-      if (e.status === 429 && e.code === 'quota') return e.message || 'Kuota harian input suara habis.';
-      if (e.code === 'tts_not_configured') return 'Layanan pengenalan suara belum dikonfigurasi di server.';
-      return e.message || 'Token pengenalan suara gagal.';
+      if (e.status === 429 && e.code === 'quota') return e.message || t('Kuota harian input suara habis.');
+      if (e.code === 'tts_not_configured') return t('Layanan pengenalan suara belum dikonfigurasi di server.');
+      return e.message || t('Token pengenalan suara gagal.');
     }
-    return 'Token pengenalan suara gagal.';
+    return t('Token pengenalan suara gagal.');
   }
 
   /* ---------- Web Speech fallback ---------- */
@@ -426,32 +427,32 @@ export function startStt(o: SttOpts): SttSession {
     o.onState?.('connecting');
     if (!navigator.mediaDevices?.getUserMedia) {
       if (hasSpeech() && o.fallback !== false) useWebSpeech('no_mic_api');
-      else fail('unsupported', window.isSecureContext ? 'Browser ini tidak bisa merekam mikrofon.' : 'Mikrofon hanya bisa dipakai lewat HTTPS.');
+      else fail('unsupported', window.isSecureContext ? t('Browser ini tidak bisa merekam mikrofon.') : t('Mikrofon hanya bisa dipakai lewat HTTPS.'));
       return;
     }
     const tokP = getToken().then((t) => ({ t, e: null as any }), (e) => ({ t: null as TokenRes | null, e }));
     try {
       await openMic();
     } catch (e: any) {
-      const [code, msg] = MIC_ERR[e?.name] || ['mic_error', `Mikrofon tidak bisa dibuka${e?.message ? `: ${e.message}` : '.'}`];
+      const [code, msg] = MIC_ERR[e?.name] || ['mic_error', e?.message ? t('Mikrofon tidak bisa dibuka: {error}', { error: e.message }) : t('Mikrofon tidak bisa dibuka.')];
       tokP.then(({ t }) => { if (t) { tok = t; report(true); } });
       fail(code, msg);
       return;
     }
     if (ended) return;
-    const { t, e } = await tokP;
-    if (ended) { if (t) { tok = t; report(true); } return; }
-    if (!t) {
+    const { t: tk, e } = await tokP;
+    if (ended) { if (tk) { tok = tk; report(true); } return; }
+    if (!tk) {
       const authish = e instanceof ApiError && (e.status === 401 || e.status === 403);
       if (!authish && o.fallback !== false && hasSpeech()) {
-        if (!(e instanceof ApiError && e.status === 429)) o.onError?.('fallback', tokenMessage(e) + ' Memakai pengenalan suara bawaan browser.');
+        if (!(e instanceof ApiError && e.status === 429)) o.onError?.('fallback', tokenMessage(e) + ' ' + t('Memakai pengenalan suara bawaan browser.'));
         useWebSpeech(e?.code || 'token');
       } else fail(e?.code || 'token', tokenMessage(e));
       return;
     }
-    tok = t;
+    tok = tk;
     reportT = setInterval(() => report(), 15000);
-    connect(t);
+    connect(tk);
   })();
 
   return {

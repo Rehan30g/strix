@@ -12,6 +12,7 @@ import { autoTag, INTENSITY, type Intensity } from '../../lib/autotag';
 import { seg } from '../../ui/controls';
 import { orb, personaOrb } from '../../ui/orb';
 import { dialogue } from './dialogue';
+import { t } from '../../i18n';
 
 interface TtsPrefs { voiceId: string; autotag?: Intensity; mode?: 'single' | 'dialog' }
 interface HistoryItem { id: number; text: string; voiceId: string; model: string; chars: number; createdAt: string; kind?: 'tts' | 'dialogue'; speakers?: number; cast?: Array<{ name: string; voiceId: string }>; lines?: number | null; durationSec?: number | null }
@@ -30,7 +31,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   let showAll = false;
 
   /* ---------- editor: a transparent textarea over a backdrop that paints [tags] purple ---------- */
-  const ta = h('textarea', { class: 'tts-text', spellcheck: true, placeholder: 'Tulis teks yang ingin diucapkan...', 'aria-label': 'Teks' }) as HTMLTextAreaElement;
+  const ta = h('textarea', { class: 'tts-text', spellcheck: true, placeholder: t('Tulis teks yang ingin diucapkan...'), 'aria-label': t('Teks') }) as HTMLTextAreaElement;
   ta.value = settings.local.get('studio.draft', SAMPLE);
   const backIn = h('div', { class: 'tts-back-in' });
   const back = h('div', { class: 'tts-back', 'aria-hidden': 'true' }, backIn);
@@ -53,7 +54,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   ta.addEventListener('scroll', syncBack, { passive: true });
   const ro = new ResizeObserver(syncBack); ro.observe(ta);
   const counter = h('span', { class: 'tts-count', 'aria-live': 'polite' });
-  const clearBtn = h('button', { type: 'button', class: 'btn ghost icon sm', title: 'Kosongkan', 'aria-label': 'Kosongkan teks', html: S('x') });
+  const clearBtn = h('button', { type: 'button', class: 'btn ghost icon sm', title: t('Kosongkan'), 'aria-label': t('Kosongkan teks'), html: S('x') });
   clearBtn.onclick = () => { setText(''); ta.focus(); };
   /** Replace the whole text, keeping the browser's own undo (Ctrl+Z) where possible. */
   function setText(next: string) {
@@ -70,12 +71,12 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   let tagCtrl: AbortController | null = null;
   let undoText: string | null = null;
   const autoBtn = h('button', { type: 'button', class: 'btn sm soft tts-auto', 'aria-haspopup': 'menu', html: S('wand') }, h('span', null, 'Auto tag'), h('span', { class: 'tts-auto-c', html: S('chevronDown') }));
-  const undoBtn = h('button', { type: 'button', class: 'btn sm ghost', hidden: true, 'aria-label': 'Urungkan auto tag', title: 'Urungkan auto tag', html: S('refresh') }, h('span', null, 'Urungkan'));
-  autoBtn.title = 'Sisipkan audio tag otomatis (teks tidak diubah)';
+  const undoBtn = h('button', { type: 'button', class: 'btn sm ghost', hidden: true, 'aria-label': t('Urungkan auto tag'), title: t('Urungkan auto tag'), html: S('refresh') }, h('span', null, t('Urungkan')));
+  autoBtn.title = t('Sisipkan audio tag otomatis (teks tidak diubah)');
   autoBtn.onclick = () => {
     if (tagCtrl) { tagCtrl.abort(); return; }
     const last = settings.get<TtsPrefs>('studio').autotag || 'normal';
-    ui.popover(autoBtn, h('div', { class: 'auto-menu' }, h('div', { class: 'menu-h' }, 'Intensitas tag'),
+    ui.popover(autoBtn, h('div', { class: 'auto-menu' }, h('div', { class: 'menu-h' }, t('Intensitas tag')),
       ...INTENSITY.map(([k, label, hint]) => {
         const b = ui.menuItem(label, k === last ? 'check' : 'tag', () => runAutoTag(k));
         b.append(h('small', null, hint));
@@ -84,19 +85,19 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   };
   async function runAutoTag(k: Intensity) {
     const before = ta.value;
-    if (!before.trim()) { ui.toast('Tulis teksnya dulu.', { kind: 'warn' }); return; }
+    if (!before.trim()) { ui.toast(t('Tulis teksnya dulu.'), { kind: 'warn' }); return; }
     sp = settings.patch<TtsPrefs>('studio', { autotag: k });
     tagCtrl = new AbortController();
-    autoBtn.classList.add('busy'); autoBtn.querySelector('span')!.textContent = 'Menandai...';
+    autoBtn.classList.add('busy'); autoBtn.querySelector('span')!.textContent = t('Menandai...');
     try {
       const r = await autoTag(before, k, tagCtrl.signal);
-      if (ta.value !== before) { ui.toast('Teks berubah saat menunggu, hasil auto tag tidak dipakai.', { kind: 'warn' }); return; }
-      if (r.text === before) { ui.toast(r.fallback ? 'AI belum bisa menambahkan tag kali ini. Coba lagi.' : 'Tidak ada tag baru yang perlu ditambahkan.', { kind: r.fallback ? 'warn' : 'info', timeout: 2600 }); return; }
+      if (ta.value !== before) { ui.toast(t('Teks berubah saat menunggu, hasil auto tag tidak dipakai.'), { kind: 'warn' }); return; }
+      if (r.text === before) { ui.toast(r.fallback ? t('AI belum bisa menambahkan tag kali ini. Coba lagi.') : t('Tidak ada tag baru yang perlu ditambahkan.'), { kind: r.fallback ? 'warn' : 'info', timeout: 2600 }); return; }
       undoText = before; undoBtn.hidden = false;
       setText(r.text);
-      ui.toast(r.mock ? 'Tag disisipkan (mode contoh: server belum punya auto tag).' : 'Tag disisipkan. Teksmu tidak diubah.', { kind: 'ok', timeout: 2600 });
+      ui.toast(r.mock ? t('Tag disisipkan (mode contoh: server belum punya auto tag).') : t('Tag disisipkan. Teksmu tidak diubah.'), { kind: 'ok', timeout: 2600 });
     } catch (e: any) {
-      if (e?.code !== 'aborted') ui.toast(e?.message || 'Auto tag gagal.', { kind: 'bad', title: 'Auto tag gagal' });
+      if (e?.code !== 'aborted') ui.toast(e?.message || t('Auto tag gagal.'), { kind: 'bad', title: t('Auto tag gagal') });
     } finally {
       tagCtrl = null; autoBtn.classList.remove('busy'); autoBtn.querySelector('span')!.textContent = 'Auto tag';
     }
@@ -116,8 +117,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     ta.setSelectionRange(pos, pos);
     onText();
   };
-  const chips = h('div', { class: 'tag-row', role: 'group', 'aria-label': 'Sisipkan audio tag' },
-    ...TAGS.map((t) => h('button', { type: 'button', class: 'chip tag-chip', onclick: () => insertTag(t) }, `[${t}]`)));
+  const chips = h('div', { class: 'tag-row', role: 'group', 'aria-label': t('Sisipkan audio tag') },
+    ...TAGS.map((tg) => h('button', { type: 'button', class: 'chip tag-chip', onclick: () => insertTag(tg) }, `[${tg}]`)));
   const editor = h('section', { class: 'tts-editor' },
     fieldBox,
     h('div', { class: 'tts-editor-f' }, h('span', { class: 'tag-label', html: S('tag') }, 'Tag'), chips),
@@ -126,12 +127,12 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   /* ---------- voice + actions ---------- */
   const vp = voicePicker({ value: sp.voiceId, onChange: (v) => { sp = settings.patch<TtsPrefs>('studio', { voiceId: v }); paint(); }, liveWhenBusy: () => player.pending > 0 });
   const playBtn = h('button', { type: 'button', class: 'btn primary lg tts-play' });
-  const dlBtn = h('button', { type: 'button', class: 'btn lg tts-dl', html: S('download') }, h('span', null, 'Unduh MP3'));
+  const dlBtn = h('button', { type: 'button', class: 'btn lg tts-dl', html: S('download') }, h('span', null, t('Unduh MP3')));
   const result = h('div', { class: 'tts-result', 'aria-live': 'polite' });
 
   /* ---------- advanced ---------- */
   const adv = h('details', { class: 'disclosure' },
-    h('summary', null, h('span', null, 'Tuning suara'), h('small', null, 'Kestabilan, kemiripan, gaya, kecepatan')),
+    h('summary', null, h('span', null, t('Tuning suara')), h('small', null, t('Kestabilan, kemiripan, gaya, kecepatan'))),
     h('div', { class: 'disc-b stack' }, tuneControls({ compact: true })));
 
   /* ---------- history ---------- */
@@ -139,12 +140,12 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   const histMore = h('button', { type: 'button', class: 'btn ghost sm', hidden: true });
   histMore.onclick = () => { showAll = !showAll; paintHistory(); };
   const histSec = h('section', { class: 'stack', style: 'gap:10px' },
-    h('div', { class: 'sec-head' }, h('h2', null, 'Riwayat'), h('span', { class: 'hint' }, 'Teks & dialog dari MP3 yang diunduh')), histList, histMore);
+    h('div', { class: 'sec-head' }, h('h2', null, t('Riwayat')), h('span', { class: 'hint' }, t('Teks & dialog dari MP3 yang diunduh'))), histList, histMore);
 
   /* ---------- mode: one voice | dialogue (multi-speaker) ---------- */
-  const single = h('div', { class: 'stack tts-single' }, editor, field('Suara', vp), h('div', { class: 'tts-actions' }, playBtn, dlBtn), result);
+  const single = h('div', { class: 'stack tts-single' }, editor, field(t('Suara'), vp), h('div', { class: 'tts-actions' }, playBtn, dlBtn), result);
   const dlg = dialogue(ctx, { onHistory: () => loadHistory() });
-  const modeSeg = seg<'single' | 'dialog'>([['single', 'Satu suara', 'user'], ['dialog', 'Dialog', 'users']], sp.mode === 'dialog' ? 'dialog' : 'single', (m) => setMode(m), 'Mode TTS', true);
+  const modeSeg = seg<'single' | 'dialog'>([['single', t('Satu suara'), 'user'], ['dialog', t('Dialog'), 'users']], sp.mode === 'dialog' ? 'dialog' : 'single', (m) => setMode(m), t('Mode TTS'), true);
   modeSeg.classList.add('tts-mode');
   function setMode(m: 'single' | 'dialog') {
     if ((sp.mode || 'single') !== m) player.stop();
@@ -152,7 +153,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     modeSeg.setValue(m);
     single.hidden = m !== 'single';
     dlg.el.hidden = m !== 'dialog';
-    adv.querySelector('small')!.textContent = m === 'dialog' ? 'Berlaku untuk semua pembicara (kecuali tuning khusus)' : 'Kestabilan, kemiripan, gaya, kecepatan';
+    adv.querySelector('small')!.textContent = m === 'dialog' ? t('Berlaku untuk semua pembicara (kecuali tuning khusus)') : t('Kestabilan, kemiripan, gaya, kecepatan');
   }
 
   root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },
@@ -183,9 +184,9 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     const ok = n > 0 && n <= maxChars && !!vp.value;
     const playing = player.pending > 0;
     playBtn.disabled = !ok && !playing;
-    playBtn.innerHTML = S(playing ? 'stop' : 'play') + `<span>${playing ? 'Stop' : 'Putar'}</span>`;
+    playBtn.innerHTML = S(playing ? 'stop' : 'play') + `<span>${playing ? 'Stop' : t('Putar')}</span>`;
     dlBtn.disabled = !ok || !!dlCtrl;
-    dlBtn.innerHTML = dlCtrl ? '<span class="spinner"></span><span>Membuat...</span>' : S('download') + '<span>Unduh MP3</span>';
+    dlBtn.innerHTML = dlCtrl ? '<span class="spinner"></span><span>' + t('Membuat...') + '</span>' : S('download') + '<span>' + t('Unduh MP3') + '</span>';
   }
   playBtn.onclick = () => {
     if (player.pending > 0) { player.stop(); return; }
@@ -206,19 +207,19 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       const url = URL.createObjectURL(blob);
       const a = h('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      result.replaceChildren(miniPlayer(blob, { label: 'MP3 siap', sub: `${name} · ${(blob.size / 1024).toFixed(0)} KB`, orb: voiceOrb(b.voiceId), accent: true }));
+      result.replaceChildren(miniPlayer(blob, { label: t('MP3 siap'), sub: `${name} · ${(blob.size / 1024).toFixed(0)} KB`, orb: voiceOrb(b.voiceId), accent: true }));
       api.usageChanged(); loadHistory();
     } catch (e: any) {
-      if (e?.code !== 'aborted') ui.toast(e.message, { kind: 'bad', title: 'Gagal membuat MP3' });
+      if (e?.code !== 'aborted') ui.toast(e.message, { kind: 'bad', title: t('Gagal membuat MP3') });
     } finally { dlCtrl = null; paint(); }
   };
 
   function paintHistory() {
     const voices = ctx.store.get().voices || [];
-    if (!histAll.length) { histList.replaceChildren(h('div', { class: 'hist-empty' }, 'Belum ada riwayat. Teks dari MP3 yang kamu unduh muncul di sini.')); histMore.hidden = true; return; }
+    if (!histAll.length) { histList.replaceChildren(h('div', { class: 'hist-empty' }, t('Belum ada riwayat. Teks dari MP3 yang kamu unduh muncul di sini.'))); histMore.hidden = true; return; }
     const items = showAll ? histAll : histAll.slice(0, 4);
     histMore.hidden = histAll.length <= 4;
-    histMore.textContent = showAll ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${histAll.length})`;
+    histMore.textContent = showAll ? t('Tampilkan lebih sedikit') : t('Tampilkan semua ({n})', { n: histAll.length });
     histList.replaceChildren(...items.map((it) => {
       const v = voices.find((x) => x.id === it.voiceId);
       const isDlg = it.kind === 'dialogue';
@@ -226,13 +227,13 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       ui.renderTagged(txt, it.text);
       const n = it.speakers || it.cast?.length || 0;
       const meta = isDlg
-        ? [`Dialog · ${n} pembicara`, it.lines ? `${it.lines} baris` : '', `${fmtNum(it.chars)} karakter`, relTime(it.createdAt)].filter(Boolean)
-        : [v ? shortName(v) : 'Suara lain', `${fmtNum(it.chars)} karakter`, relTime(it.createdAt)];
+        ? [t('Dialog · {n} pembicara', { n }), it.lines ? t('{n} baris', { n: it.lines }) : '', t('{n} karakter', { n: fmtNum(it.chars) }), relTime(it.createdAt)].filter(Boolean)
+        : [v ? shortName(v) : t('Suara lain'), t('{n} karakter', { n: fmtNum(it.chars) }), relTime(it.createdAt)];
       const cast = isDlg ? h('span', { class: 'hist-cast', 'aria-hidden': 'true' }, ...(it.cast || []).slice(0, 6).map((c) => orb(personaOrb(c.voiceId, c.name), { size: 18 }))) : null;
       const use = h('button', { type: 'button', class: 'hist-main' + (isDlg ? ' mspk-hist' : '') },
         txt,
         h('div', { class: 'hist-meta' }, cast, h('span', null, meta.join(' · '))));
-      use.title = isDlg ? 'Pakai naskah dialog dan suara pembicaranya' : 'Pakai teks dan suara ini';
+      use.title = isDlg ? t('Pakai naskah dialog dan suara pembicaranya') : t('Pakai teks dan suara ini');
       use.onclick = () => {
         if (isDlg) {
           setMode('dialog');
@@ -245,15 +246,15 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
         }
         document.getElementById('view')?.scrollTo({ top: 0, behavior: 'smooth' });
       };
-      const del = h('button', { type: 'button', class: 'btn ghost icon hist-del', 'aria-label': 'Hapus dari riwayat', title: 'Hapus', html: S('trash') });
+      const del = h('button', { type: 'button', class: 'btn ghost icon hist-del', 'aria-label': t('Hapus dari riwayat'), title: t('Hapus'), html: S('trash') });
       const remove = async () => {
-        if (!(await ui.confirm({ title: 'Hapus dari riwayat?', message: 'Teks ini dihapus dari riwayat TTS.', confirm: 'Hapus', danger: true }))) return;
-        try { await api.del(`/tts/history/${it.id}`); histAll = histAll.filter((x) => x.id !== it.id); paintHistory(); ui.toast('Dihapus dari riwayat.', { kind: 'ok', timeout: 1800 }); }
+        if (!(await ui.confirm({ title: t('Hapus dari riwayat?'), message: t('Teks ini dihapus dari riwayat TTS.'), confirm: t('Hapus'), danger: true }))) return;
+        try { await api.del(`/tts/history/${it.id}`); histAll = histAll.filter((x) => x.id !== it.id); paintHistory(); ui.toast(t('Dihapus dari riwayat.'), { kind: 'ok', timeout: 1800 }); }
         catch (e: any) { ui.toast(e.message, { kind: 'bad' }); }
       };
       del.onclick = remove;
       const item = h('div', { class: 'hist-item' }, use, del);
-      const host = swipeRow(item, [{ label: 'Pakai', icon: 'studio', run: () => use.click() }, { label: 'Hapus', icon: 'trash', cls: 'danger', run: remove }], S);
+      const host = swipeRow(item, [{ label: t('Pakai'), icon: 'studio', run: () => use.click() }, { label: t('Hapus'), icon: 'trash', cls: 'danger', run: remove }], S);
       host.setAttribute('role', 'listitem');
       return host;
     }));
@@ -270,7 +271,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   }
 
   onDisconnect(ta, player.on('change', paint));
-  onDisconnect(ta, player.on('error', (e: any) => ui.toast(e?.message || 'TTS gagal', { kind: 'bad' })));
+  onDisconnect(ta, player.on('error', (e: any) => ui.toast(e?.message || t('TTS gagal'), { kind: 'bad' })));
   ctx.data.config().then((c) => {
     maxChars = c.limits?.ttsGenerateMaxChars || maxChars; streamMax = c.limits?.ttsMaxChars || streamMax;
     onText();

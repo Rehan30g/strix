@@ -3,6 +3,7 @@ import { h, onDisconnect } from './dom';
 import { svg } from '../icons';
 import { settings, TUNE_DEFAULT } from '../settings';
 import type { Tune } from '../api';
+import { t } from '../i18n';
 
 let uid = 0;
 const nextId = (p: string) => `${p}-${++uid}`;
@@ -50,7 +51,7 @@ export function seg<T extends string>(options: Array<[T, string, string?]>, valu
 export const ACCENTS = ['American', 'British', 'Australian', 'Irish', 'Scottish', 'Canadian', 'Indian', 'Southern US', 'New York', 'Jamaican', 'South African', 'French', 'German', 'Italian', 'Spanish', 'Russian', 'Japanese', 'Korean', 'Indonesian', 'Brazilian'];
 export function accentInput(o: { value: string; onChange: (v: string) => void; id?: string }): HTMLElement & { input: HTMLInputElement } {
   const listId = nextId('accents');
-  const input = h('input', { class: 'input', id: o.id, value: o.value, placeholder: 'Kosong = bawaan, atau ketik bebas', autocomplete: 'off' }) as HTMLInputElement;
+  const input = h('input', { class: 'input', id: o.id, value: o.value, placeholder: t('Kosong = bawaan, atau ketik bebas'), autocomplete: 'off' }) as HTMLInputElement;
   input.setAttribute('list', listId);
   input.addEventListener('change', () => o.onChange(input.value.replace(/[^\p{L}\s,'-]/gu, '').trim().slice(0, 40)));
   const dl = h('datalist', { id: listId }, ...ACCENTS.map((a) => h('option', { value: a })));
@@ -61,16 +62,16 @@ export function accentInput(o: { value: string; onChange: (v: string) => void; i
 
 /* ---------- TTS tune ---------- */
 export function tuneControls(opts: { compact?: boolean } = {}): HTMLElement {
-  const t = settings.tune();
+  const tn = settings.tune();
   const set = (k: keyof Tune) => (v: number) => settings.setTune({ [k]: v } as Partial<Tune>);
   const rows = {
-    stability: slider({ label: 'Stability', min: 0, max: 1, step: 0.05, value: t.stability, onInput: set('stability'), hint: opts.compact ? undefined : 'Rendah = ekspresif (audio tag lebih kuat). Tinggi = stabil/monoton.' }),
-    similarity: slider({ label: 'Similarity', min: 0, max: 1, step: 0.05, value: t.similarity, onInput: set('similarity'), hint: opts.compact ? undefined : 'Tinggi = lebih mirip suara asli/clone.' }),
-    style: slider({ label: 'Style', min: 0, max: 1, step: 0.05, value: t.style, onInput: set('style'), hint: opts.compact ? undefined : 'Menambah gaya; tinggi bisa menjauh dari clone.' }),
-    speed: slider({ label: 'Speed', min: 0.7, max: 1.2, step: 0.05, value: t.speed, onInput: set('speed'), fmt: (v) => v.toFixed(2) + 'x' }),
+    stability: slider({ label: 'Stability', min: 0, max: 1, step: 0.05, value: tn.stability, onInput: set('stability'), hint: opts.compact ? undefined : t('Rendah = ekspresif (audio tag lebih kuat). Tinggi = stabil/monoton.') }),
+    similarity: slider({ label: 'Similarity', min: 0, max: 1, step: 0.05, value: tn.similarity, onInput: set('similarity'), hint: opts.compact ? undefined : t('Tinggi = lebih mirip suara asli/clone.') }),
+    style: slider({ label: 'Style', min: 0, max: 1, step: 0.05, value: tn.style, onInput: set('style'), hint: opts.compact ? undefined : t('Menambah gaya; tinggi bisa menjauh dari clone.') }),
+    speed: slider({ label: 'Speed', min: 0.7, max: 1.2, step: 0.05, value: tn.speed, onInput: set('speed'), fmt: (v) => v.toFixed(2) + 'x' }),
   };
-  const boost = switchRow('Speaker boost', t.speakerBoost, (v) => settings.setTune({ speakerBoost: v }), opts.compact ? undefined : 'Sedikit lebih jernih, sedikit lebih lambat.');
-  const reset = h('button', { type: 'button', class: 'btn sm ghost', html: svg('refresh') }, 'Reset tuning');
+  const boost = switchRow('Speaker boost', tn.speakerBoost, (v) => settings.setTune({ speakerBoost: v }), opts.compact ? undefined : t('Sedikit lebih jernih, sedikit lebih lambat.'));
+  const reset = h('button', { type: 'button', class: 'btn sm ghost', html: svg('refresh') }, t('Reset tuning'));
   const sync = (v: Tune) => { (Object.keys(rows) as Array<keyof typeof rows>).forEach((k) => rows[k].setValue(v[k])); boost.input.checked = !!v.speakerBoost; };
   reset.onclick = () => { settings.set('tune', { ...TUNE_DEFAULT }); };
   const el = h('div', { class: 'stack', style: 'gap:14px' }, rows.stability, rows.similarity, rows.style, rows.speed, boost, h('div', null, reset));
@@ -78,7 +79,7 @@ export function tuneControls(opts: { compact?: boolean } = {}): HTMLElement {
   return el;
 }
 
-export const STT_LANGS: Array<[string, string]> = [['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['en-AU', 'English (Australia)'], ['id-ID', 'Indonesia']];
+export const STT_LANGS: Array<[string, string]> = [['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['en-AU', 'English (Australia)'], ['id-ID', t('Indonesia')]];
 export function sttSelect(value: string, onChange: (v: string) => void): HTMLSelectElement {
   const s = h('select', { class: 'select' }, ...STT_LANGS.map(([v, l]) => new Option(l, v))) as HTMLSelectElement;
   s.value = value; s.onchange = () => onChange(s.value);

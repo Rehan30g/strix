@@ -2,6 +2,7 @@
    then a small "Dicari di web · N sumber" chip that opens the source links. Generic by `tool.name`: a new tool only needs
    an entry in TOOLS (label / icon); unknown tools get a neutral label. */
 import { h } from '../../ui/dom';
+import { t } from '../../i18n';
 import { svg } from '../../icons';
 import { popover } from '../../ui/overlay';
 import type { ToolEvent, ToolSource } from '../../lib/persona';
@@ -10,22 +11,23 @@ interface ToolMeta { icon: string; running: (q?: string) => string; done: string
 export const TOOLS: Record<string, ToolMeta> = {
   web_search: {
     icon: 'search',
-    running: (q) => (q ? `Mencari di web: ${q}` : 'Mencari di web'),
-    done: 'Dicari di web',
-    failed: 'Pencarian web gagal',
-    quota: 'Kuota pencarian web habis',
+    running: (q) => (q ? t('Mencari di web: {q}', { q }) : t('Mencari di web')),
+    done: t('Dicari di web'),
+    failed: t('Pencarian web gagal'),
+    quota: t('Kuota pencarian web habis'),
   },
 };
 export function toolMeta(name: string): ToolMeta {
   return TOOLS[name] || {
     icon: 'bolt',
-    running: () => `Memakai alat: ${name.replace(/_/g, ' ')}`,
-    done: `Alat dipakai: ${name.replace(/_/g, ' ')}`,
-    failed: `Alat gagal: ${name.replace(/_/g, ' ')}`,
-    quota: 'Kuota alat habis',
+    running: () => t('Memakai alat: {name}', { name: name.replace(/_/g, ' ') }),
+    done: t('Alat dipakai: {name}', { name: name.replace(/_/g, ' ') }),
+    failed: t('Alat gagal: {name}', { name: name.replace(/_/g, ' ') }),
+    quota: t('Kuota alat habis'),
   };
 }
-export const isQuota = (t: ToolEvent) => t.code === 'quota' || /quota|kuota/i.test(t.error || '');
+export const isQuota = (ev: ToolEvent) => ev.code === 'quota' || /quota|kuota/i.test(ev.error || '');
+const nSources = (n: number) => (n === 1 ? t('1 sumber') : t('{n} sumber', { n }));
 
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
@@ -37,36 +39,36 @@ export function sourceList(sources: ToolSource[]): HTMLElement {
 }
 
 /** The chip for one tool event (state from `t.status`). */
-export function toolChip(t: ToolEvent): HTMLElement {
-  const m = toolMeta(t.name);
-  if (t.status === 'start') {
-    const label = m.running(t.query);
-    return h('div', { class: 'tl-chip run', role: 'status', title: label, dataset: { tool: t.name } },
+export function toolChip(ev: ToolEvent): HTMLElement {
+  const m = toolMeta(ev.name);
+  if (ev.status === 'start') {
+    const label = m.running(ev.query);
+    return h('div', { class: 'tl-chip run', role: 'status', title: label, dataset: { tool: ev.name } },
       h('span', { class: 'tl-ic', html: svg(m.icon) }), h('span', { class: 'tl-t' }, label), h('span', { class: 'tl-sheen', 'aria-hidden': 'true' }));
   }
-  if (t.status === 'error') {
-    return h('div', { class: 'tl-chip bad', role: 'status', title: t.error || '', dataset: { tool: t.name } },
-      h('span', { class: 'tl-ic', html: svg('alert') }), h('span', { class: 'tl-t' }, isQuota(t) ? m.quota : m.failed));
+  if (ev.status === 'error') {
+    return h('div', { class: 'tl-chip bad', role: 'status', title: ev.error || '', dataset: { tool: ev.name } },
+      h('span', { class: 'tl-ic', html: svg('alert') }), h('span', { class: 'tl-t' }, isQuota(ev) ? m.quota : m.failed));
   }
-  const n = t.sources?.length || 0;
-  const b = h('button', { type: 'button', class: 'tl-chip done', 'aria-haspopup': n ? 'dialog' : null, dataset: { tool: t.name }, title: t.query ? `${m.done}: ${t.query}` : m.done },
-    h('span', { class: 'tl-ic', html: svg(m.icon) }), h('span', { class: 'tl-t' }, m.done), n ? h('span', { class: 'tl-n' }, `${n} sumber`) : null);
+  const n = ev.sources?.length || 0;
+  const b = h('button', { type: 'button', class: 'tl-chip done', 'aria-haspopup': n ? 'dialog' : null, dataset: { tool: ev.name }, title: ev.query ? `${m.done}: ${ev.query}` : m.done },
+    h('span', { class: 'tl-ic', html: svg(m.icon) }), h('span', { class: 'tl-t' }, m.done), n ? h('span', { class: 'tl-n' }, nSources(n)) : null);
   if (n) {
     b.onclick = () => popover(b, h('div', { class: 'tl-pop' },
-      h('div', { class: 'tl-pop-h' }, h('b', null, m.done), t.query ? h('span', null, t.query) : null),
-      sourceList(t.sources!)), { align: 'start', placement: 'above' });
+      h('div', { class: 'tl-pop-h' }, h('b', null, m.done), ev.query ? h('span', null, ev.query) : null),
+      sourceList(ev.sources!)), { align: 'start', placement: 'above' });
   } else b.disabled = true;
   return b;
 }
 
 /** Transcript line for a tool event. */
-export function toolLine(t: ToolEvent): HTMLElement {
-  const m = toolMeta(t.name);
+export function toolLine(ev: ToolEvent): HTMLElement {
+  const m = toolMeta(ev.name);
   // done: the header row of the message already says "Dicari di web" -> show the query and the sources
-  const head = t.status === 'error' ? (isQuota(t) ? m.quota : m.failed) : t.status === 'start' ? m.running() : '';
-  const n = t.sources?.length || 0;
-  return h('div', { class: 'tr-tool' + (t.status === 'error' ? ' bad' : '') },
-    h('div', { class: 'tr-tool-h', html: svg(t.status === 'error' ? 'alert' : m.icon) }, head ? h('span', null, head) : null, t.query ? h('q', null, t.query) : null,
-      t.status === 'done' ? h('small', null, n ? `${n} sumber` : 'tanpa sumber') : null),
-    n ? sourceList(t.sources!.slice(0, 5)) : null);
+  const head = ev.status === 'error' ? (isQuota(ev) ? m.quota : m.failed) : ev.status === 'start' ? m.running() : '';
+  const n = ev.sources?.length || 0;
+  return h('div', { class: 'tr-tool' + (ev.status === 'error' ? ' bad' : '') },
+    h('div', { class: 'tr-tool-h', html: svg(ev.status === 'error' ? 'alert' : m.icon) }, head ? h('span', null, head) : null, ev.query ? h('q', null, ev.query) : null,
+      ev.status === 'done' ? h('small', null, n ? nSources(n) : t('tanpa sumber')) : null),
+    n ? sourceList(ev.sources!.slice(0, 5)) : null);
 }

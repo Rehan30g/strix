@@ -1,5 +1,6 @@
 /* Voice Changer client: POST /api/vc (multipart, XHR for upload progress) -> audio/mpeg blob. */
 import { ApiError, toError, api } from '../api';
+import { t } from '../i18n';
 
 export interface VcParams {
   file: File;
@@ -42,8 +43,8 @@ export function convertVoice(p: VcParams, opts: { signal?: AbortSignal; onProgre
       const err = await toError(res, '/vc');
       reject(err);
     };
-    x.onerror = () => reject(new ApiError(0, 'network', 'Upload gagal: koneksi terputus.', null));
-    x.onabort = () => reject(new ApiError(0, 'aborted', 'Dibatalkan', null));
+    x.onerror = () => reject(new ApiError(0, 'network', t('Upload gagal: koneksi terputus.'), null));
+    x.onabort = () => reject(new ApiError(0, 'aborted', t('Dibatalkan'), null));
     opts.signal?.addEventListener('abort', () => x.abort(), { once: true });
     x.send(fd);
   });

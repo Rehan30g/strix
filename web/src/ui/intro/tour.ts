@@ -20,6 +20,7 @@
 import './tour.css';
 import '../../screens/chat/chat.css';   // the Chat panel reuses the chat screen's classes; do not rely on that chunk having loaded
 import { h } from '../dom';
+import { t } from '../../i18n';
 import { svg } from '../../icons';
 import { customOrb, defaultVoiceOrb, personaOrb, hexToRgb, type OrbEl, type OrbSpec, type Rgb } from '../orb';
 import { DEFAULT_VOICE, chatPrefs, fromCharacter, streamChat, ttsText, type Persona } from '../../lib/persona';
@@ -136,8 +137,8 @@ export function openTour(opts: TourOpts = {}): void {
   const endIso = String((store.get().config as { testEnd?: string } | null)?.testEnd || '2026-10-20');
   // the pill stays small all along; on the last step the same pill spells it out (top of the screen: the narration lives at the bottom)
   const testChip = h('div', { class: 'tu-test' }, h('i', { 'aria-hidden': 'true' }),
-    h('span', { class: 'short' }, `Uji coba sementara · ditutup ${fmtEndShort(endIso)}`),
-    h('span', { class: 'long' }, h('b', null, 'Ini uji coba sementara.'), ` Ditutup ${fmtEndDate(endIso)} (${leftLabel(endIso)}).`));
+    h('span', { class: 'short' }, t('Uji coba sementara · ditutup {date}', { date: fmtEndShort(endIso) })),
+    h('span', { class: 'long' }, h('b', null, t('Ini uji coba sementara.')), ' ' + t('Ditutup {date} ({left}).', { date: fmtEndDate(endIso), left: leftLabel(endIso) })));
   const nav = h('div', { class: 'tu-nav' }, skipStep, nextBtn, startBtn);
   const dots = h('div', { class: 'tu-dots', 'aria-hidden': 'true' }, ...[0, 1, 2, 3].map(() => h('i')));
   const skipTour = h('button', { type: 'button', class: 'tu-skiptour' }, 'Skip tour');

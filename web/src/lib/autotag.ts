@@ -3,12 +3,13 @@
    MOCK: while the server has no endpoint (404) a small local heuristic is used (remove `mockAutotag` + the 404 branch
    once the endpoint is everywhere). */
 import { api } from '../api';
+import { t } from '../i18n';
 
 export type Intensity = 'light' | 'normal' | 'rich';
 export const INTENSITY: Array<[Intensity, string, string]> = [
-  ['light', 'Ringan', 'Beberapa tag saja'],
-  ['normal', 'Normal', 'Seimbang dan natural'],
-  ['rich', 'Kaya', 'Ekspresif, banyak tag'],
+  ['light', t('Ringan'), t('Beberapa tag saja')],
+  ['normal', t('Normal'), t('Seimbang dan natural')],
+  ['rich', t('Kaya'), t('Ekspresif, banyak tag')],
 ];
 
 /** Words of a text without audio tags (for the "text unchanged" check). */
@@ -16,7 +17,7 @@ export const bareWords = (t: string) => t.replace(/\[[^\]]*\]/g, ' ').replace(/\
 
 export const AUTOTAG_MAX = 3000;
 export async function autoTag(text: string, intensity: Intensity, signal?: AbortSignal, language?: string): Promise<{ text: string; mock: boolean; fallback: boolean }> {
-  if (text.length > AUTOTAG_MAX) throw Object.assign(new Error(`Auto tag maksimal ${AUTOTAG_MAX} karakter. Pendekkan teksnya dulu.`), { code: 'too_long' });
+  if (text.length > AUTOTAG_MAX) throw Object.assign(new Error(t('Auto tag maksimal {max} karakter. Pendekkan teksnya dulu.', { max: AUTOTAG_MAX })), { code: 'too_long' });
   let out: string; let mock = false, fallback = false;
   try {
     const r = await api.post<{ text: string; added?: number; fallback?: boolean }>('/tts/autotag', { text, intensity, ...(language ? { language } : {}) }, { signal });
@@ -26,7 +27,7 @@ export async function autoTag(text: string, intensity: Intensity, signal?: Abort
     if (e?.status !== 404 || e?.code === 'voice_forbidden') throw e;
     out = mockAutotag(text, intensity); mock = true;               // MOCK (endpoint not deployed yet)
   }
-  if (bareWords(out) !== bareWords(text)) throw Object.assign(new Error('Hasil auto tag mengubah isi teks, jadi tidak dipakai. Coba lagi.'), { code: 'changed' });
+  if (bareWords(out) !== bareWords(text)) throw Object.assign(new Error(t('Hasil auto tag mengubah isi teks, jadi tidak dipakai. Coba lagi.')), { code: 'changed' });
   return { text: out, mock, fallback };
 }
 
@@ -36,7 +37,7 @@ export const AUTOTAG_DIALOGUE_MAX = 6000;
     Accepted only when every line keeps exactly its words. */
 export async function autoTagLines(lines: TagLine[], intensity: Intensity, signal?: AbortSignal): Promise<{ lines: string[]; mock: boolean; fallback: boolean }> {
   const total = lines.reduce((n, l) => n + l.text.length, 0);
-  if (total > AUTOTAG_DIALOGUE_MAX) throw Object.assign(new Error(`Auto tag dialog maksimal ${AUTOTAG_DIALOGUE_MAX} karakter.`), { code: 'too_long' });
+  if (total > AUTOTAG_DIALOGUE_MAX) throw Object.assign(new Error(t('Auto tag dialog maksimal {max} karakter.', { max: AUTOTAG_DIALOGUE_MAX })), { code: 'too_long' });
   let out: string[]; let mock = false, fallback = false;
   try {
     const r = await api.post<{ lines?: TagLine[]; fallback?: boolean }>('/tts/autotag', { lines, intensity }, { signal });
@@ -46,7 +47,7 @@ export async function autoTagLines(lines: TagLine[], intensity: Intensity, signa
     if (e?.status !== 404) throw e;
     out = lines.map((l) => mockAutotag(l.text, intensity)); mock = true;   // MOCK (endpoint not deployed yet)
   }
-  if (out.length !== lines.length || out.some((t, i) => bareWords(t) !== bareWords(lines[i].text))) throw Object.assign(new Error('Hasil auto tag mengubah isi teks, jadi tidak dipakai. Coba lagi.'), { code: 'changed' });
+  if (out.length !== lines.length || out.some((t, i) => bareWords(t) !== bareWords(lines[i].text))) throw Object.assign(new Error(t('Hasil auto tag mengubah isi teks, jadi tidak dipakai. Coba lagi.')), { code: 'changed' });
   return { lines: out, mock, fallback };
 }
 

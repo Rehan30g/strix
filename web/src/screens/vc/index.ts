@@ -8,12 +8,13 @@ import { miniPlayer, pauseAllMini } from '../../ui/audio';
 import { startRecording, canRecord, probeDuration, fmtDur, type Recorder } from '../../lib/recorder';
 import { convertVoice, type VcResult } from '../../lib/vc';
 import { voiceOrb } from '../../ui/orb';
+import { t } from '../../i18n';
 
 interface VcPrefs { voiceId: string; removeBackgroundNoise: boolean; stability: number; similarity: number; style: number }
 interface Source { file: File; duration: number | null; origin: 'file' | 'mic' }
 
 const MAX_MB = 15, MAX_SEC = 300;
-const fmtLeft = (s: number) => (s >= 60 ? `${Math.floor(s / 60)} mnt ${Math.round(s % 60)} dtk` : `${Math.max(0, Math.round(s))} dtk`);
+const fmtLeft = (s: number) => (s >= 60 ? t('{m} mnt {s} dtk', { m: Math.floor(s / 60), s: Math.round(s % 60) }) : t('{s} dtk', { s: Math.max(0, Math.round(s)) }));
 
 export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   const { settings, ui, icons, store, player } = ctx;
@@ -28,39 +29,39 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   let res: VcResult | null = null;
 
   /* ---------- 1. source ---------- */
-  const modeSeg = seg<'upload' | 'record'>([['upload', 'Unggah file', 'upload'], ['record', 'Rekam', 'mic']], mode, (v) => { mode = v; paintSource(); }, 'Sumber audio', true);
+  const modeSeg = seg<'upload' | 'record'>([['upload', t('Unggah file'), 'upload'], ['record', t('Rekam'), 'mic']], mode, (v) => { mode = v; paintSource(); }, t('Sumber audio'), true);
   const fileInput = h('input', { type: 'file', accept: 'audio/*,.mp3,.wav,.m4a,.ogg,.webm,.flac,.aac', hidden: true }) as HTMLInputElement;
   const drop = h('button', { type: 'button', class: 'dropzone' },
     h('span', { class: 'dz-ic', html: S('upload') }),
-    h('b', null, 'Pilih file audio'),
-    h('span', { class: 'hint' }, `MP3, WAV, M4A, WEBM · maks ${MAX_MB} MB · sekitar 5 menit`));
-  const recBtn = h('button', { type: 'button', class: 'rec-btn', 'aria-label': 'Mulai merekam', html: S('mic') });
-  const recTime = h('div', { class: 'rec-time' }, 'Ketuk untuk merekam');
-  const recHint = h('div', { class: 'hint' }, 'Bicara jelas dekat mikrofon. Maksimal 5 menit.');
+    h('b', null, t('Pilih file audio')),
+    h('span', { class: 'hint' }, t('MP3, WAV, M4A, WEBM · maks {mb} MB · sekitar 5 menit', { mb: MAX_MB })));
+  const recBtn = h('button', { type: 'button', class: 'rec-btn', 'aria-label': t('Mulai merekam'), html: S('mic') });
+  const recTime = h('div', { class: 'rec-time' }, t('Ketuk untuk merekam'));
+  const recHint = h('div', { class: 'hint' }, t('Bicara jelas dekat mikrofon. Maksimal 5 menit.'));
   const recPanel = h('div', { class: 'rec-panel' }, recBtn, recTime, recHint);
   const sourceBox = h('div', { class: 'vc-source' });
   const srcSec = h('section', { class: 'step' },
-    h('div', { class: 'step-h' }, h('span', { class: 'step-n' }, '1'), h('h2', null, 'Audio asli')),
+    h('div', { class: 'step-h' }, h('span', { class: 'step-n' }, '1'), h('h2', null, t('Audio asli'))),
     sourceBox, fileInput);
 
   function paintSource() {
     if (src) {
-      const change = ui.btn({ label: 'Ganti', icon: 'refresh', cls: 'sm ghost', onClick: () => { src = null; res = null; paintSource(); paintResult(); paint(); } });
+      const change = ui.btn({ label: t('Ganti'), icon: 'refresh', cls: 'sm ghost', onClick: () => { src = null; res = null; paintSource(); paintResult(); paint(); } });
       sourceBox.replaceChildren(h('div', { class: 'src-card' },
-        miniPlayer(src.file, { label: src.origin === 'mic' ? 'Rekaman' : src.file.name, sub: [src.duration ? fmtDur(src.duration) : '', `${(src.file.size / 1024 / 1024).toFixed(1)} MB`].filter(Boolean).join(' · '), knownDuration: src.duration }),
+        miniPlayer(src.file, { label: src.origin === 'mic' ? t('Rekaman') : src.file.name, sub: [src.duration ? fmtDur(src.duration) : '', `${(src.file.size / 1024 / 1024).toFixed(1)} MB`].filter(Boolean).join(' · '), knownDuration: src.duration }),
         change));
       return;
     }
     modeSeg.setValue(mode);
     sourceBox.replaceChildren(modeSeg, mode === 'upload' ? drop : recPanel);
-    if (mode === 'record' && !canRecord()) recPanel.replaceChildren(h('div', { class: 'notice warn', html: S('alert') }, h('span', null, 'Browser ini tidak mendukung perekaman. Unggah file saja.')));
+    if (mode === 'record' && !canRecord()) recPanel.replaceChildren(h('div', { class: 'notice warn', html: S('alert') }, h('span', null, t('Browser ini tidak mendukung perekaman. Unggah file saja.'))));
   }
 
   async function setSource(file: File, origin: Source['origin'], known?: number) {
-    if (!(file.type.startsWith('audio/') || file.type === 'video/webm' || /\.(mp3|wav|m4a|ogg|oga|webm|flac|aac|opus)$/i.test(file.name))) { ui.toast('File ini bukan audio.', { kind: 'warn' }); return; }
-    if (file.size > MAX_MB * 1024 * 1024) { ui.toast(`File lebih dari ${MAX_MB} MB.`, { kind: 'warn' }); return; }
+    if (!(file.type.startsWith('audio/') || file.type === 'video/webm' || /\.(mp3|wav|m4a|ogg|oga|webm|flac|aac|opus)$/i.test(file.name))) { ui.toast(t('File ini bukan audio.'), { kind: 'warn' }); return; }
+    if (file.size > MAX_MB * 1024 * 1024) { ui.toast(t('File lebih dari {mb} MB.', { mb: MAX_MB }), { kind: 'warn' }); return; }
     const duration = known ?? await probeDuration(file);
-    if (duration && duration > MAX_SEC + 5) { ui.toast(`Audio ${fmtDur(duration)} terlalu panjang. Maksimal sekitar 5 menit.`, { kind: 'warn' }); return; }
+    if (duration && duration > MAX_SEC + 5) { ui.toast(t('Audio {dur} terlalu panjang. Maksimal sekitar 5 menit.', { dur: fmtDur(duration) }), { kind: 'warn' }); return; }
     src = { file, duration: duration ?? null, origin };
     res = null;
     paintSource(); paintResult(); paint();
@@ -75,7 +76,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     if (rec) {
       const r = rec; rec = null; cancelAnimationFrame(recRaf); paintRec();
       const out = await r.stop();
-      if (!out) { ui.toast('Rekaman terlalu pendek.', { kind: 'warn' }); return; }
+      if (!out) { ui.toast(t('Rekaman terlalu pendek.'), { kind: 'warn' }); return; }
       setSource(out.file, 'mic', out.duration);
       return;
     }
@@ -95,22 +96,22 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   function paintRec() {
     recBtn.classList.toggle('on', !!rec);
     recBtn.innerHTML = S(rec ? 'stop' : 'mic');
-    recBtn.setAttribute('aria-label', rec ? 'Selesai merekam' : 'Mulai merekam');
-    if (!rec) { recTime.textContent = 'Ketuk untuk merekam'; recBtn.style.setProperty('--lvl', '0'); }
-    recHint.textContent = rec ? 'Ketuk lagi untuk selesai.' : 'Bicara jelas dekat mikrofon. Maksimal 5 menit.';
+    recBtn.setAttribute('aria-label', rec ? t('Selesai merekam') : t('Mulai merekam'));
+    if (!rec) { recTime.textContent = t('Ketuk untuk merekam'); recBtn.style.setProperty('--lvl', '0'); }
+    recHint.textContent = rec ? t('Ketuk lagi untuk selesai.') : t('Bicara jelas dekat mikrofon. Maksimal 5 menit.');
   }
   recBtn.onclick = toggleRec;
 
   /* ---------- 2. target voice ---------- */
   const vp = voicePicker({ value: pr.voiceId, onChange: (v) => { setPr({ voiceId: v }); paint(); } });
   const voiceSec = h('section', { class: 'step' },
-    h('div', { class: 'step-h' }, h('span', { class: 'step-n' }, '2'), h('h2', null, 'Suara target')), vp);
+    h('div', { class: 'step-h' }, h('span', { class: 'step-n' }, '2'), h('h2', null, t('Suara target'))), vp);
 
   /* ---------- advanced ---------- */
   const adv = h('details', { class: 'disclosure' },
-    h('summary', null, h('span', null, 'Lanjutan'), h('small', null, 'Hapus noise, tuning suara')),
+    h('summary', null, h('span', null, t('Lanjutan')), h('small', null, t('Hapus noise, tuning suara'))),
     h('div', { class: 'disc-b stack' },
-      switchRow('Hapus noise latar', pr.removeBackgroundNoise, (v) => setPr({ removeBackgroundNoise: v }), 'Untuk rekaman di tempat ramai.'),
+      switchRow(t('Hapus noise latar'), pr.removeBackgroundNoise, (v) => setPr({ removeBackgroundNoise: v }), t('Untuk rekaman di tempat ramai.')),
       slider({ label: 'Stability', min: 0, max: 1, step: 0.05, value: pr.stability, onInput: (v) => setPr({ stability: v }) }),
       slider({ label: 'Similarity', min: 0, max: 1, step: 0.05, value: pr.similarity, onInput: (v) => setPr({ similarity: v }) }),
       slider({ label: 'Style', min: 0, max: 1, step: 0.05, value: pr.style, onInput: (v) => setPr({ style: v }) })));
@@ -119,14 +120,14 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
   const goBtn = h('button', { type: 'button', class: 'btn primary lg block' });
   const progress = h('div', { class: 'progress' }, h('i'));
   const progText = h('span');
-  const cancelBtn = ui.btn({ label: 'Batal', cls: 'sm ghost', onClick: () => ctrl?.abort() });
+  const cancelBtn = ui.btn({ label: t('Batal'), cls: 'sm ghost', onClick: () => ctrl?.abort() });
   const working = h('div', { class: 'vc-working', hidden: true }, h('div', { class: 'row', style: 'justify-content:space-between' }, progText, cancelBtn), progress);
   const quotaLine = h('div', { class: 'hint vc-quota' });
-  const offNote = h('div', { class: 'notice warn', hidden: true, html: S('info') }, h('span', null, 'Voice Changer tidak tersedia untuk akunmu atau belum dikonfigurasi di server.'));
+  const offNote = h('div', { class: 'notice warn', hidden: true, html: S('info') }, h('span', null, t('Voice Changer tidak tersedia untuk akunmu atau belum dikonfigurasi di server.')));
   const resultBox = h('section', { class: 'step vc-result', hidden: true, 'aria-live': 'polite' });
 
   root.append(h('div', { class: 'page' }, h('div', { class: 'page-inner' },
-    h('p', { class: 'page-lead' }, 'Ubah suara di rekaman jadi suara lain, intonasi tetap sama.'),
+    h('p', { class: 'page-lead' }, t('Ubah suara di rekaman jadi suara lain, intonasi tetap sama.')),
     srcSec, voiceSec, adv,
     h('div', { class: 'stack', style: 'gap:10px' }, offNote, goBtn, working, quotaLine),
     resultBox)));
@@ -136,10 +137,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     const off = store.get().me?.features?.vc === false;
     offNote.hidden = !off;
     goBtn.disabled = busy || off || !src || !vp.value;
-    goBtn.innerHTML = S('changer') + `<span>${busy ? 'Sedang mengubah...' : 'Ubah suara'}</span>`;
+    goBtn.innerHTML = S('changer') + `<span>${busy ? t('Sedang mengubah...') : t('Ubah suara')}</span>`;
     working.hidden = !busy;
     const q = store.get().me?.quota?.vc;
-    quotaLine.textContent = q ? `Sisa kuota hari ini: ${fmtLeft(Math.max(0, q.limit - q.used))} audio` : '';
+    quotaLine.textContent = q ? t('Sisa kuota hari ini: {left} audio', { left: fmtLeft(Math.max(0, q.limit - q.used)) }) : '';
     quotaLine.hidden = !q;
   }
 
@@ -148,28 +149,28 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     player.stop(); pauseAllMini();
     ctrl = new AbortController();
     const bar = progress.firstElementChild as HTMLElement;
-    progress.classList.remove('indet'); bar.style.width = '0%'; progText.textContent = 'Mengunggah...';
+    progress.classList.remove('indet'); bar.style.width = '0%'; progText.textContent = t('Mengunggah...');
     paint();
     try {
       res = await convertVoice({ file: src.file, voiceId: vp.value, removeBackgroundNoise: pr.removeBackgroundNoise, stability: pr.stability, similarity: pr.similarity, style: pr.style, durationSec: src.duration }, {
         signal: ctrl.signal,
         onProgress: (phase, p) => {
-          if (phase === 'upload') { bar.style.width = Math.round(p * 100) + '%'; progText.textContent = `Mengunggah ${Math.round(p * 100)}%`; }
-          else { progress.classList.add('indet'); progText.textContent = 'Memproses suara...'; }
+          if (phase === 'upload') { bar.style.width = Math.round(p * 100) + '%'; progText.textContent = t('Mengunggah {pct}%', { pct: Math.round(p * 100) }); }
+          else { progress.classList.add('indet'); progText.textContent = t('Memproses suara...'); }
         },
       });
       paintResult();
       ctx.data.refreshMe(300);
       requestAnimationFrame(() => resultBox.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     } catch (e: any) {
-      if (e?.code !== 'aborted' && !(e?.status === 429 && e?.code === 'quota')) ui.toast(e.message || 'Gagal mengubah suara.', { kind: 'bad', title: 'Voice Changer gagal' });
+      if (e?.code !== 'aborted' && !(e?.status === 429 && e?.code === 'quota')) ui.toast(e.message || t('Gagal mengubah suara.'), { kind: 'bad', title: t('Voice Changer gagal') });
     } finally { ctrl = null; paint(); }
   };
 
   function paintResult() {
     if (!res || !src) { resultBox.hidden = true; resultBox.replaceChildren(); return; }
     const r = res;
-    const dl = h('a', { class: 'btn lg block', href: '#', html: S('download') }, h('span', null, 'Unduh MP3'));
+    const dl = h('a', { class: 'btn lg block', href: '#', html: S('download') }, h('span', null, t('Unduh MP3')));
     dl.onclick = (e) => {
       e.preventDefault();
       const url = URL.createObjectURL(r.blob);
@@ -179,10 +180,10 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
     const v = (store.get().voices || []).find((x) => x.id === vp.value);
     resultBox.hidden = false;
     resultBox.replaceChildren(
-      h('div', { class: 'step-h' }, h('span', { class: 'step-n ok', html: S('check') }), h('h2', null, 'Hasil')),
+      h('div', { class: 'step-h' }, h('span', { class: 'step-n ok', html: S('check') }), h('h2', null, t('Hasil'))),
       h('div', { class: 'ab' },
-        miniPlayer(src.file, { label: 'Asli', sub: src.origin === 'mic' ? 'Rekamanmu' : src.file.name, knownDuration: src.duration }),
-        miniPlayer(r.blob, { label: 'Hasil', sub: v ? v.name.split(' - ')[0] : 'Suara baru', accent: true, orb: voiceOrb(vp.value), level: 'vc:' + vp.value })),
+        miniPlayer(src.file, { label: t('Asli'), sub: src.origin === 'mic' ? t('Rekamanmu') : src.file.name, knownDuration: src.duration }),
+        miniPlayer(r.blob, { label: t('Hasil'), sub: v ? v.name.split(' - ')[0] : t('Suara baru'), accent: true, orb: voiceOrb(vp.value), level: 'vc:' + vp.value })),
       dl);
   }
 

@@ -25,6 +25,7 @@ import { commitMemory } from '../../lib/memory';
 import { duoTurn, duoRing, participant, callable, type DuoMsg, type EndEvent, type CallEvent, type RingResult } from '../../lib/duo';
 import { startRing, RING_MS, type Ringtone } from '../../lib/ringtone';
 import { pickPersona } from './picker';
+import { t } from '../../i18n';
 import '../chat/chat.css';
 import './duo.css';
 
@@ -78,33 +79,33 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   let turnsSinceUser = 0;
 
   /* ================= DOM ================= */
-  const title = h('span', { class: 'duo-title' }, 'Panggilan');
+  const title = h('span', { class: 'duo-title' }, t('Panggilan'));
   const timer = h('span', { class: 'duo-timer' }, '00:00');
-  const trBtn = h('button', { type: 'button', class: 'vx-chip', html: S('history'), title: 'Transkrip panggilan' }, h('span', null, 'Transkrip'));
-  const moreBtn = h('button', { type: 'button', class: 'btn icon ghost vx-more', 'aria-label': 'Opsi', 'aria-haspopup': 'menu', html: S('moreV') });
+  const trBtn = h('button', { type: 'button', class: 'vx-chip', html: S('history'), title: t('Transkrip panggilan') }, h('span', null, t('Transkrip')));
+  const moreBtn = h('button', { type: 'button', class: 'btn icon ghost vx-more', 'aria-label': t('Opsi'), 'aria-haspopup': 'menu', html: S('moreV') });
   const top = h('header', { class: 'duo-top' }, h('div', { class: 'duo-head' }, title, timer), h('div', { class: 'spacer' }), trBtn, moreBtn);
   const status = h('div', { class: 'duo-status', 'aria-live': 'polite' });
   const stage = h('div', { class: 'duo-stage' }, caps.el, caps.live);
   const orbsRow = h('div', { class: 'duo-orbs', 'data-hswipe': '1' });
   const you = h('div', { class: 'vx-you duo-youtxt', 'aria-live': 'polite' });
   const me = ctx.store.get().me?.user;
-  const youDot = h('span', { class: 'duo-youdot', 'aria-hidden': 'true' }, ui.avatar(me?.name || me?.email || 'Kamu', me?.picture || null));
+  const youDot = h('span', { class: 'duo-youdot', 'aria-hidden': 'true' }, ui.avatar(me?.name || me?.email || t('Kamu'), me?.picture || null));
   const youRow = h('div', { class: 'duo-you' }, youDot, you);
-  const input = h('textarea', { class: 'vx-input', rows: 1, placeholder: 'Ketik untuk menyela...', 'aria-label': 'Pesan', enterkeyhint: 'send' }) as HTMLTextAreaElement;
-  const micBtn = h('button', { type: 'button', class: 'vx-mic', 'aria-label': 'Tahan untuk bicara', html: S('mic') });
+  const input = h('textarea', { class: 'vx-input', rows: 1, placeholder: t('Ketik untuk menyela...'), 'aria-label': t('Pesan'), enterkeyhint: 'send' }) as HTMLTextAreaElement;
+  const micBtn = h('button', { type: 'button', class: 'vx-mic', 'aria-label': t('Tahan untuk bicara'), html: S('mic') });
   const micBars = h('span', { class: 'vx-bars', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
-  const sendBtn = h('button', { type: 'submit', class: 'vx-send', 'aria-label': 'Kirim', html: S('arrowUp') });
+  const sendBtn = h('button', { type: 'submit', class: 'vx-send', 'aria-label': t('Kirim'), html: S('arrowUp') });
   const form = h('form', { class: 'vx-bar' }, micBtn, input, sendBtn);
-  const muteBtn = h('button', { type: 'button', class: 'duo-cb', 'aria-pressed': 'false' }, h('span', { class: 'duo-cb-ic', html: S('speaker') }), h('span', null, 'Bisukan'));
-  const addBtn = h('button', { type: 'button', class: 'duo-cb' }, h('span', { class: 'duo-cb-ic', html: S('plus') }), h('span', null, 'Tambah orang'));
-  const leaveBtn = h('button', { type: 'button', class: 'duo-cb leave' }, h('span', { class: 'duo-cb-ic', html: S('phoneOff') }), h('span', null, 'Tinggalkan panggilan'));
+  const muteBtn = h('button', { type: 'button', class: 'duo-cb', 'aria-pressed': 'false' }, h('span', { class: 'duo-cb-ic', html: S('speaker') }), h('span', null, t('Bisukan')));
+  const addBtn = h('button', { type: 'button', class: 'duo-cb' }, h('span', { class: 'duo-cb-ic', html: S('plus') }), h('span', null, t('Tambah orang')));
+  const leaveBtn = h('button', { type: 'button', class: 'duo-cb leave' }, h('span', { class: 'duo-cb-ic', html: S('phoneOff') }), h('span', null, t('Tinggalkan panggilan')));
   const ctl = h('div', { class: 'duo-ctl' }, muteBtn, addBtn, leaveBtn);
   const endBox = h('div', { class: 'duo-end', hidden: true });
   const wrap = h('div', { class: 'duo', 'data-state': 'idle' }, top, stage, status, orbsRow, youRow, h('div', { class: 'duo-bottom' }, form, ctl, endBox));
   root.append(wrap);
 
   /* ================= slots (orbs) ================= */
-  const nameOf = (id: string | null | undefined) => (id && (slots.get(id)?.p.name || personas.find((p) => p.id === id)?.name)) || 'Seseorang';
+  const nameOf = (id: string | null | undefined) => (id && (slots.get(id)?.p.name || personas.find((p) => p.id === id)?.name)) || t('Seseorang');
   const present = () => order.filter((id) => slots.get(id)?.state === 'on');
   const orbSize = () => Math.round(innerWidth >= 900 ? Math.min(260, Math.max(160, innerHeight * 0.3)) : Math.min(240, Math.max(118, Math.min(innerWidth * 0.4, innerHeight * 0.22))));
   const BIG = orbSize();
@@ -168,8 +169,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       s.el.classList.toggle('talk', id === talk);
       s.el.classList.toggle('think', id === th && id !== talk);
       s.el.style.setProperty('--dx', ti >= 0 && i !== ti ? `${Math.sign(i - ti) * (n >= 3 ? 10 : 16)}px` : '0px');
-      s.sub.textContent = s.state === 'ringing' ? (ringing?.id === id ? 'memanggil…' : 'menunggu…')
-        : s.state === 'left' ? 'keluar' : s.state === 'declined' ? 'menolak' : id === talk ? 'bicara' : id === th ? '…' : '';
+      s.sub.textContent = s.state === 'ringing' ? (ringing?.id === id ? t('memanggil…') : t('menunggu…'))
+        : s.state === 'left' ? t('keluar') : s.state === 'declined' ? t('menolak') : id === talk ? t('bicara') : id === th ? '…' : '';
     });
     wrap.classList.toggle('alone', present().length <= 1);
   }
@@ -207,23 +208,23 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const kids: Array<Node | string> = [];
     if (ended) { /* the end box says it */ }
     else if (ringing) {
-      const b = h('button', { type: 'button', class: 'btn sm soft', html: S('x') }, h('span', null, 'Batal'));
+      const b = h('button', { type: 'button', class: 'btn sm soft', html: S('x') }, h('span', null, t('Batal')));
       b.onclick = () => cancelRing();
-      kids.push(h('span', null, 'Berdering…'), b);
+      kids.push(h('span', null, t('Berdering…')), b);
     } else if (retryRing && (s === 'idle' || s === 'listening')) {
       const r = retryRing;
-      const b = h('button', { type: 'button', class: 'btn sm soft', html: S('phone') }, h('span', null, 'Coba lagi'));
+      const b = h('button', { type: 'button', class: 'btn sm soft', html: S('phone') }, h('span', null, t('Coba lagi')));
       b.onclick = () => { retryRing = null; void ringCall(r.id, 'user'); };
       kids.push(h('span', null, r.text), b);
     } else if (s === 'thinking' || (busy && s !== 'speaking' && s !== 'ducked')) kids.push(h('span', { class: 'vx-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')));
-    else if (s === 'ducked') kids.push(dm.duckBy === 'typing' ? 'Tekan Enter untuk menyela' : 'Mendengarkanmu...');
-    else if (s === 'interrupted') kids.push('Silakan, mereka mendengarkan');
-    else if (rec && recPhase === 'connecting') kids.push('Menyambungkan mic...');
-    else if (s === 'speaking') kids.push(convo && rec ? 'Bicara saja untuk menyela' : 'Ketuk bola yang bicara untuk menyela');
-    else if (convo && convoPaused) kids.push(convoPaused === 'silence' ? 'Mic dijeda karena hening. Ketuk mic untuk lanjut' : convoPaused === 'hidden' ? 'Dijeda saat tab disembunyikan' : convoPaused === 'quota' ? 'Kuota input suara habis' : 'Mic dijeda. Ketuk mic untuk lanjut');
-    else if (convo && rec) kids.push(uttId ? 'Aku dengar...' : 'Mendengarkan. Bicara kapan saja');
+    else if (s === 'ducked') kids.push(dm.duckBy === 'typing' ? t('Tekan Enter untuk menyela') : t('Mendengarkanmu...'));
+    else if (s === 'interrupted') kids.push(t('Silakan, mereka mendengarkan'));
+    else if (rec && recPhase === 'connecting') kids.push(t('Menyambungkan mic...'));
+    else if (s === 'speaking') kids.push(convo && rec ? t('Bicara saja untuk menyela') : t('Ketuk bola yang bicara untuk menyela'));
+    else if (convo && convoPaused) kids.push(convoPaused === 'silence' ? t('Mic dijeda karena hening. Ketuk mic untuk lanjut') : convoPaused === 'hidden' ? t('Dijeda saat tab disembunyikan') : convoPaused === 'quota' ? t('Kuota input suara habis') : t('Mic dijeda. Ketuk mic untuk lanjut'));
+    else if (convo && rec) kids.push(uttId ? t('Aku dengar...') : t('Mendengarkan. Bicara kapan saja'));
     else if (!started) { /* waiting for the first tap */ }
-    else kids.push(sttSupported() ? 'Tahan mic untuk bicara, atau ketik' : 'Ketik untuk bicara');
+    else kids.push(sttSupported() ? t('Tahan mic untuk bicara, atau ketik') : t('Ketik untuk bicara'));
     status.replaceChildren(...kids);
     paintBar();
     paintSlots();
@@ -260,7 +261,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     r.block = true;
     caps.block(r.id, 'spk' + (r.ring ? ' pre' : ''));
     const el = caps.el.lastElementChild as HTMLElement | null;
-    if (el && r.speaker) { el.dataset.who = nameOf(r.speaker) + (r.ring ? ' · berdering' : ''); el.style.setProperty('--spk', slots.get(r.speaker)?.color || 'var(--accent)'); }
+    if (el && r.speaker) { el.dataset.who = nameOf(r.speaker) + (r.ring ? ' · ' + t('berdering') : ''); el.style.setProperty('--spk', slots.get(r.speaker)?.color || 'var(--accent)'); }
     for (const c of r.pendingCaps) caps.add(c.sid, c.t);
     r.pendingCaps = [];
   }
@@ -308,7 +309,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function audioFailed() {
     if (Date.now() - failToast < 6000) return;
     failToast = Date.now();
-    ui.toast((player.err ? player.err.trim().replace(/([^.!?])$/, '$1.') + ' ' : '') + 'Teks ditampilkan tanpa suara.', { kind: 'warn', title: 'Suara tidak bisa diputar' });
+    ui.toast((player.err ? player.err.trim().replace(/([^.!?])$/, '$1.') + ' ' : '') + t('Teks ditampilkan tanpa suara.'), { kind: 'warn', title: t('Suara tidak bisa diputar') });
   }
   /** what of reply r was really heard, from the caption reveal state */
   function progress(r: Reply, rev = caps.revealed()) {
@@ -425,8 +426,8 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       waitingUser = true; kick(); paintState(); return;
     }
     if (err) {
-      if (err.code === 'duo_limit') { ui.toast('Panggilan ini sudah mencapai batas giliran. Mulai panggilan baru untuk lanjut.', { kind: 'warn' }); waitingUser = true; nudges = 9; }
-      else if (err.code !== 'aborted') ui.toast(err.message || String(err), { kind: 'bad', title: 'Giliran gagal' });
+      if (err.code === 'duo_limit') { ui.toast(t('Panggilan ini sudah mencapai batas giliran. Mulai panggilan baru untuk lanjut.'), { kind: 'warn' }); waitingUser = true; nudges = 9; }
+      else if (err.code !== 'aborted') ui.toast(err.message || String(err), { kind: 'bad', title: t('Giliran gagal') });
       waitingUser = true; kick(); paintState(); return;
     }
     if (r.speaker && r.full.trim()) {
@@ -449,7 +450,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       r.after.push(() => { if (!ended) void ringCall(c.target, sp); });
     }
     const nx = r.next;
-    if (r.close) { r.after.push(() => endCall('Panggilan ditutup: sudah lama sepi.')); waitingUser = false; kick(); paintState(); return; }
+    if (r.close) { r.after.push(() => endCall(t('Panggilan ditutup: sudah lama sepi.'))); waitingUser = false; kick(); paintState(); return; }
     if (nx && nx !== 'user' && present().includes(nx) && !r.call) void requestTurn({ speaker: nx });
     else { waitingUser = true; if (!present().length) r.after.push(() => maybeEnd()); }
     kick(); paintState();
@@ -458,7 +459,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const s = slots.get(id);
     if (!s) return;
     caps.block('left-' + id, 'event');
-    caps.show(s.how === 'quiet' ? `${s.p.name} pamit dari panggilan.` : `${s.p.name} meninggalkan panggilan.`);
+    caps.show(s.how === 'quiet' ? t('{name} pamit dari panggilan.', { name: s.p.name }) : t('{name} meninggalkan panggilan.', { name: s.p.name }));
     s.el.classList.add('leaving');
     if (s.how === 'quiet') s.el.classList.add('quiet');
     setTimeout(() => removeSlot(id), reducedMotion() ? 100 : s.how === 'quiet' ? 1400 : 900);
@@ -467,7 +468,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   function maybeEnd() {
     if (ended || present().length || ringing) return;
     if ([...slots.values()].some((s) => s.state === 'ringing')) return;
-    endCall('Semua sudah keluar. Panggilan selesai.');
+    endCall(t('Semua sudah keluar. Panggilan selesai.'));
   }
   /** what goes to the server: user / persona lines + events, the last 40 */
   function wire(): DuoMsg[] {
@@ -486,7 +487,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const last = log[log.length - 1];
     if ((merge || forceMerge) && last?.role === 'user') last.content = `${last.content} ${text}`.trim(); else log.push({ role: 'user', content: text });
     forceMerge = false; nudges = 0; waitingUser = false; lastInputAt = performance.now();
-    if (!present().length) { if (!ringing) { ui.toast('Belum ada yang di panggilan. Tambah orang dulu.', { kind: 'info' }); } if (dm.state === 'thinking') D({ type: 'quiet' }); return; }
+    if (!present().length) { if (!ringing) { ui.toast(t('Belum ada yang di panggilan. Tambah orang dulu.'), { kind: 'info' }); } if (dm.state === 'thinking') D({ type: 'quiet' }); return; }
     // the line before was cut off: resume it / rephrase / drop (decision as in Chat)
     let hint: ResumeHint | undefined;
     const prev = [...log].reverse().find((m, i) => i > 0 && m.role === 'assistant');
@@ -534,11 +535,11 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   async function ringCall(id: string, caller: string) {
     const p = personas.find((x) => x.id === id);
     if (!p || ended) return;
-    if (ringing) { ui.toast('Tunggu panggilan yang sedang berdering.', { kind: 'info' }); return; }
+    if (ringing) { ui.toast(t('Tunggu panggilan yang sedang berdering.'), { kind: 'info' }); return; }
     const s0 = slots.get(id);
     if (s0?.state === 'on') return;
-    if (phoneOff.has(id)) { ui.toast(`${p.name} mematikan teleponnya.`, { kind: 'info' }); return; }
-    if (present().length >= MAX_PERSONAS) { ui.toast(`Maksimal ${MAX_PERSONAS} persona dalam satu panggilan.`, { kind: 'warn' }); return; }
+    if (phoneOff.has(id)) { ui.toast(t('{name} mematikan teleponnya.', { name: p.name }), { kind: 'info' }); return; }
+    if (present().length >= MAX_PERSONAS) { ui.toast(t('Maksimal {max} persona dalam satu panggilan.', { max: MAX_PERSONAS }), { kind: 'warn' }); return; }
     retryRing = null;
     const s = addSlot(p, 'ringing');
     tries.set(id, (tries.get(id) || 0) + 1);
@@ -548,7 +549,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const tStart = performance.now();
     ringing = { id, ctrl, tone, until: 0 };
     caps.block('ring-' + id + tries.get(id), 'event');
-    caps.show(caller === 'user' ? `Memanggil ${p.name}…` : `${nameOf(caller)} menelepon ${p.name}…`);
+    caps.show(caller === 'user' ? t('Memanggil {name}…', { name: p.name }) : t('{caller} menelepon {name}…', { caller: nameOf(caller), name: p.name }));
     paintState(); kick();
     const recent = log.filter((m) => m.role !== 'event').slice(-6).map((m) => ({ who: m.role === 'user' ? 'User' : nameOf(m.speaker), text: plain(m.content).slice(0, 300) }));
     let res: RingResult | null = null;
@@ -558,7 +559,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       tone.stop();
       if (ringing?.ctrl === ctrl) ringing = null;
       if (e?.code !== 'aborted') {
-        ui.toast(e?.code === 'duo_limit' ? `Maksimal ${MAX_PERSONAS} persona dalam satu panggilan.` : e?.message || String(e), { kind: 'warn', title: 'Panggilan gagal' });
+        ui.toast(e?.code === 'duo_limit' ? t('Maksimal {max} persona dalam satu panggilan.', { max: MAX_PERSONAS }) : e?.message || String(e), { kind: 'warn', title: t('Panggilan gagal') });
         if (slots.get(id)?.state === 'ringing') removeSlot(id);
       }
       paintState(); maybeEnd(); return;
@@ -567,7 +568,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     stats.rings.push({ id, decision: res.decision, ms: Math.round(performance.now() - tStart) });
     if (res.decision === 'off') {
       tone.stop(); ringing = null; phoneOff.add(id);
-      caps.block('off-' + id, 'event'); caps.show(`${p.name} mematikan teleponnya.`);
+      caps.block('off-' + id, 'event'); caps.show(t('{name} mematikan teleponnya.', { name: p.name }));
       removeSlot(id); paintState(); maybeEnd(); return;
     }
     // while it rings, a persona already on the call reacts (its voice, its colour); the callee stays silent until it picks up
@@ -588,13 +589,13 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       paintState();
       void requestTurn({ join: { id, caller } });
     } else {
-      const text = res.decision === 'decline' ? `${p.name} menolak panggilan.` : `${p.name} tidak menjawab.`;
+      const text = res.decision === 'decline' ? t('{name} menolak panggilan.', { name: p.name }) : t('{name} tidak menjawab.', { name: p.name });
       caps.block('miss-' + id + tries.get(id), 'event'); caps.show(text);
       log.push({ role: 'event', content: res.decision === 'decline' ? `${p.name} declined the call from ${by}.` : `${p.name} did not answer the call from ${by}.` });
       s.state = 'declined';
       paintSlots();
       setTimeout(() => { if (slots.get(id)?.state === 'declined') removeSlot(id); }, 1400);
-      if (caller === 'user' && (tries.get(id) || 0) < 3) retryRing = { id, text: res.decision === 'decline' ? 'Ditolak.' : 'Tidak dijawab.' };
+      if (caller === 'user' && (tries.get(id) || 0) < 3) retryRing = { id, text: res.decision === 'decline' ? t('Ditolak.') : t('Tidak dijawab.') };
       else if ((tries.get(id) || 0) >= 3) phoneOff.add(id);
       // the persona who reacted says what it thinks of that
       if (res.after && slots.get(res.after.speaker)?.state === 'on') sayLine(res.after.speaker, res.after.text);
@@ -645,7 +646,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     commitAll();
     const r = rec; rec = null; r?.abort();
     form.hidden = true; ctl.hidden = true;
-    const again = ui.btn({ label: 'Kembali ke Chat', icon: 'arrowLeft', cls: 'primary' });
+    const again = ui.btn({ label: t('Kembali ke Chat'), icon: 'arrowLeft', cls: 'primary' });
     again.onclick = () => leave(true);
     endBox.replaceChildren(h('p', { class: 'duo-endt' }, text), again);
     endBox.hidden = false;
@@ -758,7 +759,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       onPartial: (t) => { if (rec === session) onConvoPartial(t); },
       onFinal: (t) => { if (rec === session) onConvoFinal(t); },
       onEnd: () => { if (rec !== session) return; rec = null; micLevel = 0; uttId = 0; if (!convoPaused) convoPaused = 'error'; D({ type: 'mic', on: false }); },
-      onError: (code, m) => { if (rec !== session) return; convoPaused = code === 'quota' ? 'quota' : 'error'; if (code !== 'quota') ui.toast(m, { kind: 'warn', title: code.startsWith('mic') ? 'Mikrofon' : 'Mode Percakapan' }); },
+      onError: (code, m) => { if (rec !== session) return; convoPaused = code === 'quota' ? 'quota' : 'error'; if (code !== 'quota') ui.toast(m, { kind: 'warn', title: code.startsWith('mic') ? t('Mikrofon') : t('Mode Percakapan') }); },
     });
     rec = session;
     D({ type: 'mic', on: true });
@@ -776,7 +777,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
   /* ================= mic: hold to talk / tap (Mode Percakapan: pause / resume) ================= */
   function startListening() {
     if (ended) return;
-    if (!sttSupported()) { ui.toast('Browser ini tidak bisa merekam suara. Ketik pesanmu.', { kind: 'warn' }); input.focus(); return; }
+    if (!sttSupported()) { ui.toast(t('Browser ini tidak bisa merekam suara. Ketik pesanmu.'), { kind: 'warn' }); input.focus(); return; }
     const s0 = dm.state;
     if (s0 === 'speaking' || s0 === 'ducked' || s0 === 'thinking') D({ type: 'stop' });
     rec?.abort();
@@ -817,14 +818,14 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const stop = talking && !typed && !ringing;
     sendBtn.innerHTML = S(stop ? 'stop' : 'arrowUp');
     sendBtn.classList.toggle('stop', stop);
-    sendBtn.setAttribute('aria-label', stop ? 'Hentikan' : 'Kirim');
+    sendBtn.setAttribute('aria-label', stop ? t('Hentikan') : t('Kirim'));
     sendBtn.disabled = ended || (!stop && !typed);
     const live = convo && !!rec;
     micBtn.classList.toggle('rec', !!rec && !convo);
     micBtn.classList.toggle('convo', convo);
     micBtn.classList.toggle('live', live);
-    if (convo) { if (!micBtn.contains(micBars)) { micBtn.innerHTML = S('waveform'); micBtn.append(micBars); } micBtn.setAttribute('aria-label', live ? 'Mode Percakapan aktif. Ketuk untuk jeda' : 'Mode Percakapan dijeda. Ketuk untuk lanjut'); }
-    else if (micBtn.contains(micBars)) { micBtn.innerHTML = S('mic'); micBtn.setAttribute('aria-label', 'Tahan untuk bicara'); }
+    if (convo) { if (!micBtn.contains(micBars)) { micBtn.innerHTML = S('waveform'); micBtn.append(micBars); } micBtn.setAttribute('aria-label', live ? t('Mode Percakapan aktif. Ketuk untuk jeda') : t('Mode Percakapan dijeda. Ketuk untuk lanjut')); }
+    else if (micBtn.contains(micBars)) { micBtn.innerHTML = S('mic'); micBtn.setAttribute('aria-label', t('Tahan untuk bicara')); }
     micBtn.disabled = ended;
     input.disabled = ended;
     addBtn.disabled = ended || !!ringing || present().length >= MAX_PERSONAS;
@@ -847,14 +848,14 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     if (!input.value.trim()) { const s0 = dm.state; if (s0 === 'speaking' || s0 === 'ducked' || s0 === 'thinking') D({ type: 'stop' }); else if (player.busy && !ringing) player.stop(); return; }
     submitText();
   };
-  muteBtn.onclick = () => { player.setMuted(!player.muted); ringing?.tone.setMuted(player.muted); paintBar(); ui.toast(player.muted ? 'Suara panggilan dibisukan. Teks tetap tampil.' : 'Suara panggilan nyala lagi.', { kind: 'ok', timeout: 1800 }); };
+  muteBtn.onclick = () => { player.setMuted(!player.muted); ringing?.tone.setMuted(player.muted); paintBar(); ui.toast(player.muted ? t('Suara panggilan dibisukan. Teks tetap tampil.') : t('Suara panggilan nyala lagi.'), { kind: 'ok', timeout: 1800 }); };
   addBtn.onclick = async () => {
     if (ended || ringing) return;
     const rows = personas.filter((p) => slots.get(p.id)?.state !== 'on').map((p) => {
       const n = tries.get(p.id) || 0;
-      return { p, status: phoneOff.has(p.id) ? 'Mematikan telepon' : n ? `Sudah ditelepon ${n}x` : undefined, disabled: phoneOff.has(p.id) };
+      return { p, status: phoneOff.has(p.id) ? t('Mematikan telepon') : n ? t('Sudah ditelepon {n}x', { n }) : undefined, disabled: phoneOff.has(p.id) };
     });
-    const pick = await pickPersona(ctx, { title: 'Tambah orang ke panggilan', rows, note: `Maksimal ${MAX_PERSONAS} persona. Yang ditelepon bisa menolak.` });
+    const pick = await pickPersona(ctx, { title: t('Tambah orang ke panggilan'), rows, note: t('Maksimal {max} persona. Yang ditelepon bisa menolak.', { max: MAX_PERSONAS }) });
     if (pick) { const g = orbGhost(pick.orbEl); if (g) handOff(g, 1500, 'duo:' + pick.p.id); void ringCall(pick.p.id, 'user'); }
   };
   addEventListener('keydown', onKey, true);
@@ -869,25 +870,25 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     const row = (m: DuoMsg) => m.role === 'event'
       ? h('div', { class: 'tr-m ev' }, h('p', null, eventText(m.content)))
       : h('div', { class: 'tr-m ' + (m.role === 'user' ? 'me' : 'ai') + (m.interrupted ? ' cut' : ''), style: m.speaker ? `--spk:${slots.get(m.speaker)?.color || 'var(--accent)'}` : '' },
-        h('span', { class: 'tr-who' }, m.role === 'user' ? 'Kamu' : nameOf(m.speaker), m.interrupted ? h('span', { class: 'tr-tag cut' }, 'terpotong') : null),
+        h('span', { class: 'tr-who' }, m.role === 'user' ? t('Kamu') : nameOf(m.speaker), m.interrupted ? h('span', { class: 'tr-tag cut' }, t('terpotong')) : null),
         h('p', null, visibleText(m.content).trim() + (m.interrupted ? ' —' : '')));
-    const list = h('div', { class: 'tr duo-tr', role: 'log', 'aria-label': 'Transkrip' }, ...(items.length ? items.map(row) : [h('div', { class: 'empty', style: 'padding:28px 8px' }, h('p', null, 'Belum ada percakapan.'))]));
-    const m = ui.modal({ title: 'Transkrip panggilan', cls: 'tr-dlg', body: list });
+    const list = h('div', { class: 'tr duo-tr', role: 'log', 'aria-label': t('Transkrip') }, ...(items.length ? items.map(row) : [h('div', { class: 'empty', style: 'padding:28px 8px' }, h('p', null, t('Belum ada percakapan.')))]));
+    const m = ui.modal({ title: t('Transkrip panggilan'), cls: 'tr-dlg', body: list });
     requestAnimationFrame(() => { const b = m.root.querySelector('.dlg-b'); if (b) b.scrollTop = b.scrollHeight; });
   }
-  const eventText = (t: string) => t.replace(/^(.+) quietly left the call\.$/, '$1 pamit dari panggilan.').replace(/^(.+) left the call\.$/, '$1 meninggalkan panggilan.').replace(/^(.+) picked up \(called by (.+)\)\.$/, (_, a, b) => `${a} mengangkat (ditelepon ${b === 'the user' ? 'kamu' : b}).`)
-    .replace(/^(.+) declined the call.*$/, '$1 menolak panggilan.').replace(/^(.+) did not answer.*$/, '$1 tidak menjawab.').replace(/^The user hung up before (.+) answered\.$/, 'Kamu membatalkan panggilan ke $1.');
+  const eventText = (s: string) => s.replace(/^(.+) quietly left the call\.$/, (_, a) => t('{name} pamit dari panggilan.', { name: a })).replace(/^(.+) left the call\.$/, (_, a) => t('{name} meninggalkan panggilan.', { name: a })).replace(/^(.+) picked up \(called by (.+)\)\.$/, (_, a, b) => t('{name} mengangkat (ditelepon {by}).', { name: a, by: b === 'the user' ? t('kamu') : b }))
+    .replace(/^(.+) declined the call.*$/, (_, a) => t('{name} menolak panggilan.', { name: a })).replace(/^(.+) did not answer.*$/, (_, a) => t('{name} tidak menjawab.', { name: a })).replace(/^The user hung up before (.+) answered\.$/, (_, a) => t('Kamu membatalkan panggilan ke {name}.', { name: a }));
   trBtn.onclick = openTranscript;
   moreBtn.onclick = () => {
     const tg = h('button', { type: 'button', class: 'menu-item vx-toggle', role: 'menuitemcheckbox', 'aria-checked': String(convo), html: S('waveform') },
-      h('span', { class: 'vx-tg-t' }, h('span', null, 'Mode Percakapan'), h('small', null, convo ? 'Mic terbuka, bicara kapan saja' : 'Bicara kapan saja, bisa menyela')), h('span', { class: 'vx-sw' + (convo ? ' on' : ''), 'aria-hidden': 'true' }));
+      h('span', { class: 'vx-tg-t' }, h('span', null, t('Mode Percakapan')), h('small', null, convo ? t('Mic terbuka, bicara kapan saja') : t('Bicara kapan saja, bisa menyela'))), h('span', { class: 'vx-sw' + (convo ? ' on' : ''), 'aria-hidden': 'true' }));
     tg.onclick = () => setConvo(!convo);
-    ui.popover(moreBtn, h('div', null, tg, h('div', { class: 'menu-sep' }), ui.menuItem('Tambah orang', 'plus', () => addBtn.click()), ui.menuItem('Transkrip', 'history', openTranscript), ui.menuItem('Tinggalkan panggilan', 'phoneOff', () => leave(), 'danger')), { align: 'end' });
+    ui.popover(moreBtn, h('div', null, tg, h('div', { class: 'menu-sep' }), ui.menuItem(t('Tambah orang'), 'plus', () => addBtn.click()), ui.menuItem(t('Transkrip'), 'history', openTranscript), ui.menuItem(t('Tinggalkan panggilan'), 'phoneOff', () => leave(), 'danger')), { align: 'end' });
   };
 
   /* ================= start ================= */
   // a call needs a user gesture for audio: coming from a tap it starts at once, a direct link shows one button
-  const startBtn = h('button', { type: 'button', class: 'btn primary lg duo-start', html: S('phone') }, h('span', null, 'Mulai panggilan'));
+  const startBtn = h('button', { type: 'button', class: 'btn primary lg duo-start', html: S('phone') }, h('span', null, t('Mulai panggilan')));
   function begin() { if (!started) { started = true; startBtn.remove(); paintState(); } }
   async function boot(chars: Character[]) {
     personas = [...chars.map((c) => fromCharacter(c)), ...customPersonas().map(fromCustom)];
@@ -904,7 +905,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
       void receiveOrb(s.orb, 520, hasHandOff('duo:' + w.id) ? 'duo:' + w.id : '');
     }
     for (const id of callIds) if (hasHandOff('duo:' + id)) { const s = addSlot(find(id)!, 'ringing'); void receiveOrb(s.orb, 520, 'duo:' + id); }
-    title.textContent = [w, ...callIds.map(find)].filter(Boolean).map((p) => p!.name).join(' · ') || 'Panggilan';
+    title.textContent = [w, ...callIds.map(find)].filter(Boolean).map((p) => p!.name).join(' · ') || t('Panggilan');
     paintState(); kick();
     const go = async () => {
       begin();
@@ -919,7 +920,7 @@ export function mount(root: HTMLElement, ctx: ScreenCtx) {
     if ((navigator as any).userActivation?.hasBeenActive !== false && document.visibilityState === 'visible') void go();
     else { status.replaceChildren(startBtn); startBtn.onclick = () => void go(); }
   }
-  ctx.data.characters().then((l) => boot(l)).catch((e) => { caps.block('err', 'event'); caps.show(`Persona tidak bisa dimuat: ${e.message || e}`); });
+  ctx.data.characters().then((l) => boot(l)).catch((e) => { caps.block('err', 'event'); caps.show(t('Persona tidak bisa dimuat: {error}', { error: e.message || String(e) })); });
 
   const clockT = setInterval(() => { const s = Math.floor((Date.now() - t0call) / 1000); timer.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 1000);
   onDisconnect(wrap, player.on('change', () => { kick(); paintBar(); }));

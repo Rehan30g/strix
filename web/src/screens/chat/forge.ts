@@ -22,6 +22,7 @@ import type { CustomPersona } from '../../lib/persona';
 import { chatPrefs, DEFAULT_VOICE, LANGS, cleanName, cleanAccent } from '../../lib/persona';
 import { BRAND } from '../../lib/brand';
 import { h } from '../../ui/dom';
+import { t } from '../../i18n';
 import { field } from '../../ui/controls';
 import { orb, personaOrb, thinkingLevel, emptyOrbSpec, type Rgb, type OrbSpec, type CustomOrb, type OrbEl } from '../../ui/orb';
 import { handOff, takeHandOff } from '../../ui/transition';
@@ -30,17 +31,17 @@ import type { PersonaForm, FormField } from './creator';
 
 type PanelKey = 'ai' | FormField;
 const PANELS: Array<{ k: PanelKey; label: string; title: string; lead: string }> = [
-  { k: 'ai', label: 'Strix', title: 'Bantu AI', lead: 'Ceritakan idenya. Strix mencari referensi, lalu mengisi bahan-bahannya untukmu.' },
-  { k: 'name', label: 'Nama', title: 'Nama', lead: 'Nama yang dipakai dan dipanggil.' },
-  { k: 'desc', label: 'Sifat', title: 'Sifat', lead: 'Siapa dia, sifatnya, dan cara bicaranya. Ini inti persona.' },
-  { k: 'accent', label: 'Aksen', title: 'Aksen', lead: 'Logat saat berbicara. Kosongkan bila netral.' },
-  { k: 'lang', label: 'Bahasa', title: 'Bahasa', lead: 'Bahasa yang dipakai saat membalas.' },
-  { k: 'voice', label: 'Suara', title: 'Suara & bola', lead: 'Suara dari koleksimu. Bola mengikuti warna suara, atau warna pilihan Strix.' },
-  { k: 'greet', label: 'Sapaan', title: 'Sapaan', lead: 'Kalimat pertama saat percakapan dimulai. Opsional.' },
+  { k: 'ai', label: 'Strix', title: t('Bantu AI'), lead: t('Ceritakan idenya. Strix mencari referensi, lalu mengisi bahan-bahannya untukmu.') },
+  { k: 'name', label: t('Nama'), title: t('Nama'), lead: t('Nama yang dipakai dan dipanggil.') },
+  { k: 'desc', label: t('Sifat'), title: t('Sifat'), lead: t('Siapa dia, sifatnya, dan cara bicaranya. Ini inti persona.') },
+  { k: 'accent', label: t('Aksen'), title: t('Aksen'), lead: t('Logat saat berbicara. Kosongkan bila netral.') },
+  { k: 'lang', label: t('Bahasa'), title: t('Bahasa'), lead: t('Bahasa yang dipakai saat membalas.') },
+  { k: 'voice', label: t('Suara'), title: t('Suara & bola'), lead: t('Suara dari koleksimu. Bola mengikuti warna suara, atau warna pilihan Strix.') },
+  { k: 'greet', label: t('Sapaan'), title: t('Sapaan'), lead: t('Kalimat pertama saat percakapan dimulai. Opsional.') },
 ];
 const INGREDIENTS: Array<{ k: FormField; label: string }> = [
-  { k: 'name', label: 'Nama' }, { k: 'desc', label: 'Sifat' }, { k: 'accent', label: 'Aksen' },
-  { k: 'lang', label: 'Bahasa' }, { k: 'voice', label: 'Suara' }, { k: 'greet', label: 'Sapaan' },
+  { k: 'name', label: t('Nama') }, { k: 'desc', label: t('Sifat') }, { k: 'accent', label: t('Aksen') },
+  { k: 'lang', label: t('Bahasa') }, { k: 'voice', label: t('Suara') }, { k: 'greet', label: t('Sapaan') },
 ];
 const STEP = (Math.PI * 2) / PANELS.length;
 const D_OUT = 3.3;
@@ -73,21 +74,21 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const gl = new ForgeGL(noGL);
 
   /* ---------------- DOM ---------------- */
-  const closeBtn = h('button', { type: 'button', class: 'pf-x', 'aria-label': 'Tutup', html: S('x') }) as HTMLButtonElement;
-  const title = h('div', { class: 'pf-title' }, f.isNew ? 'Persona baru' : 'Edit persona');
-  const topSave = h('button', { type: 'button', class: 'pf-tsave' }, 'Simpan') as HTMLButtonElement;
+  const closeBtn = h('button', { type: 'button', class: 'pf-x', 'aria-label': t('Tutup'), html: S('x') }) as HTMLButtonElement;
+  const title = h('div', { class: 'pf-title' }, f.isNew ? t('Persona baru') : t('Edit persona'));
+  const topSave = h('button', { type: 'button', class: 'pf-tsave' }, t('Simpan')) as HTMLButtonElement;
   const top = h('div', { class: 'pf-top' }, closeBtn, title, topSave);
 
   // outside
-  const capH = h('h2', null, f.isNew ? 'Bola ini masih kosong' : 'Bola persona');
-  const capP = h('p', null, f.isNew ? 'Seret bahan ke dalam bola, atau ketuk. Strix bisa membantu.' : 'Ketuk bahan untuk mengubahnya.');
+  const capH = h('h2', null, f.isNew ? t('Bola ini masih kosong') : t('Bola persona'));
+  const capP = h('p', null, f.isNew ? t('Seret bahan ke dalam bola, atau ketuk. Strix bisa membantu.') : t('Ketuk bahan untuk mengubahnya.'));
   const caption = h('div', { class: 'pf-cap' }, capH, capP);
   const tiles = INGREDIENTS.map((g, i) => h('button', { type: 'button', class: 'pf-ing', 'data-k': g.k, 'data-i': String(i) },
     h('span', { class: 'pf-ing-h' }, h('span', { class: 'pf-n' }, String(i + 1).padStart(2, '0')), h('b', null, g.label)), h('span', { class: 'pf-ing-v' })) as HTMLButtonElement);
-  const tray = h('div', { class: 'pf-tray', role: 'group', 'aria-label': 'Bahan persona' }, ...tiles);
-  const aiBtn = h('button', { type: 'button', class: 'pf-btn', html: S('sparkle') }, h('span', null, 'Bantu AI')) as HTMLButtonElement;
-  const inBtn = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, 'Masuk ke bola')) as HTMLButtonElement;
-  const outSave = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, 'Simpan')) as HTMLButtonElement;
+  const tray = h('div', { class: 'pf-tray', role: 'group', 'aria-label': t('Bahan persona') }, ...tiles);
+  const aiBtn = h('button', { type: 'button', class: 'pf-btn', html: S('sparkle') }, h('span', null, t('Bantu AI'))) as HTMLButtonElement;
+  const inBtn = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, t('Masuk ke bola'))) as HTMLButtonElement;
+  const outSave = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, t('Simpan'))) as HTMLButtonElement;
   const outBar = h('div', { class: 'pf-obar' }, aiBtn, inBtn, outSave);
   const outside = h('div', { class: 'pf-out' }, caption, h('div', { class: 'pf-bottom' }, tray, outBar));
 
@@ -95,38 +96,38 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const strix = orb(strixSpec(), { size: 44, cls: 'pf-strix', label: BRAND });
   const aiLoading = h('div', { class: 'pf-aiload', hidden: true }, h('span', { class: 'pf-scanbar', 'aria-hidden': 'true' }), f.stageText, f.cancelBtn);
   const aiForm = h('div', { class: 'pf-aiform' },
-    field('Ide karakter', f.idea, 'Satu kalimat cukup. Contoh: tokoh fiksi, tokoh publik, atau sebuah vibe.'),
-    f.ideaChips, field('Bahasa persona', f.ideaLang), f.researchBtn, f.aiErr);
+    field(t('Ide karakter'), f.idea, t('Satu kalimat cukup. Contoh: tokoh fiksi, tokoh publik, atau sebuah vibe.')),
+    f.ideaChips, field(t('Bahasa persona'), f.ideaLang), f.researchBtn, f.aiErr);
   const orbRows: Array<{ o: OrbEl; t: HTMLElement }> = [];
   const orbRow = (big: boolean) => {
     const o = orb(f.spec(), { size: big ? 64 : 40, cls: 'pf-vorb' });
-    const t = h('span', { class: 'pf-orbt' });
-    const b = h('button', { type: 'button', class: 'pf-link' }, 'Ubah') as HTMLButtonElement;
+    const tt = h('span', { class: 'pf-orbt' });
+    const b = h('button', { type: 'button', class: 'pf-link' }, t('Ubah')) as HTMLButtonElement;
     b.onclick = () => f.openStudio();
-    orbRows.push({ o, t });
-    return h('div', { class: 'pf-orbrow' }, o, t, b);
+    orbRows.push({ o, t: tt });
+    return h('div', { class: 'pf-orbrow' }, o, tt, b);
   };
   const aiOrbRow = orbRow(false);
   aiOrbRow.hidden = true;
   const body: Record<PanelKey, Node[]> = {
-    ai: [h('div', { class: 'pf-strixrow' }, strix, h('span', null, `${BRAND} mengisi dari dalam bola`)), aiForm, aiLoading, aiOrbRow, f.aiInfo],
-    name: [field('Nama', f.name)],
-    desc: [field('Deskripsi & sifat', f.desc), f.clauseBox, h('div', { class: 'pf-row' }, f.refineBtn, f.undoBtn)],
-    accent: [field('Aksen', h('div', { style: 'display:contents' }, f.acc, f.accList))],
-    lang: [field('Bahasa', f.lang)],
-    voice: [field('Suara', f.vp), orbRow(true)],
-    greet: [field('Kalimat pembuka', f.greet, 'Boleh pakai audio tag seperti [laughs].')],
+    ai: [h('div', { class: 'pf-strixrow' }, strix, h('span', null, t('{brand} mengisi dari dalam bola', { brand: BRAND }))), aiForm, aiLoading, aiOrbRow, f.aiInfo],
+    name: [field(t('Nama'), f.name)],
+    desc: [field(t('Deskripsi & sifat'), f.desc), f.clauseBox, h('div', { class: 'pf-row' }, f.refineBtn, f.undoBtn)],
+    accent: [field(t('Aksen'), h('div', { style: 'display:contents' }, f.acc, f.accList))],
+    lang: [field(t('Bahasa'), f.lang)],
+    voice: [field(t('Suara'), f.vp), orbRow(true)],
+    greet: [field(t('Kalimat pembuka'), f.greet, t('Boleh pakai audio tag seperti [laughs].'))],
   };
   const panels = PANELS.map((p, i) => h('section', { class: 'pf-panel' + (p.k === 'ai' ? '' : ' solo'), 'data-k': p.k, 'data-i': String(i), tabindex: '-1', 'aria-label': p.title },
     h('header', null, h('span', { class: 'pf-n' }, `${String(i + 1).padStart(2, '0')} / ${String(PANELS.length).padStart(2, '0')}`), h('h3', null, p.title), h('p', null, p.lead)),
     h('div', { class: 'pf-pb' }, ...body[p.k])));
   const world = h('div', { class: 'pf-world' }, ...panels);
   const tabs = PANELS.map((p, i) => h('button', { type: 'button', class: 'pf-tab', 'data-i': String(i), role: 'tab' }, h('span', { class: 'pf-n' }, String(i + 1)), h('span', null, p.label)) as HTMLButtonElement);
-  const tabRow = h('div', { class: 'pf-tabs', role: 'tablist', 'aria-label': 'Bagian persona' }, ...tabs);
-  const backOut = h('button', { type: 'button', class: 'pf-btn', 'aria-label': 'Keluar dari bola' }, h('span', null, 'Keluar')) as HTMLButtonElement;
-  const prev = h('button', { type: 'button', class: 'pf-btn icon', 'aria-label': 'Bagian sebelumnya', html: S('chevronLeft') }) as HTMLButtonElement;
-  const next = h('button', { type: 'button', class: 'pf-btn icon', 'aria-label': 'Bagian berikutnya', html: S('chevronRight') }) as HTMLButtonElement;
-  const inSave = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, 'Simpan')) as HTMLButtonElement;
+  const tabRow = h('div', { class: 'pf-tabs', role: 'tablist', 'aria-label': t('Bagian persona') }, ...tabs);
+  const backOut = h('button', { type: 'button', class: 'pf-btn', 'aria-label': t('Keluar dari bola') }, h('span', null, t('Keluar'))) as HTMLButtonElement;
+  const prev = h('button', { type: 'button', class: 'pf-btn icon', 'aria-label': t('Bagian sebelumnya'), html: S('chevronLeft') }) as HTMLButtonElement;
+  const next = h('button', { type: 'button', class: 'pf-btn icon', 'aria-label': t('Bagian berikutnya'), html: S('chevronRight') }) as HTMLButtonElement;
+  const inSave = h('button', { type: 'button', class: 'pf-btn primary' }, h('span', null, t('Simpan'))) as HTMLButtonElement;
   const inBar = h('div', { class: 'pf-ibar' }, backOut, h('div', { class: 'pf-pn' }, prev, next), inSave);
   const msgBox = h('div', { class: 'pf-msg' }, f.msg);
   const inside = h('div', { class: 'pf-in' }, world, tabRow, inBar, msgBox);
@@ -135,7 +136,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   const wakeInside = () => { if (inside.style.display === 'none') { inside.style.display = ''; layout(); } };
   const fly = h('div', { class: 'pf-fly', 'aria-hidden': 'true' }, h('span'));
   const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
-  const root = h('div', { class: 'pf mode-out', role: 'dialog', 'aria-modal': 'true', 'aria-label': f.isNew ? 'Buat persona baru' : 'Edit persona' }, gl.canvas, outside, inside, top, fly, live);
+  const root = h('div', { class: 'pf mode-out', role: 'dialog', 'aria-modal': 'true', 'aria-label': f.isNew ? t('Buat persona baru') : t('Edit persona') }, gl.canvas, outside, inside, top, fly, live);
   document.body.append(root);
   // no WebGL: the sphere's orb is a real DOM orb under the (transparent) canvas
   const DORB = 400;
@@ -348,7 +349,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   function paintAll() {
     const sp = f.spec(), a = accentOf(sp);
     root.style.setProperty('--pa', a.bg); root.style.setProperty('--pa-fg', a.fg);
-    for (const r of orbRows) { r.o.setSpec(sp); r.t.textContent = f.aiOrb() ? 'Warna dari Strix, sesuai karakternya' : f.orb() ? 'Bola buatanmu' : 'Bola mengikuti suara'; }
+    for (const r of orbRows) { r.o.setSpec(sp); r.t.textContent = f.aiOrb() ? t('Warna dari Strix, sesuai karakternya') : f.orb() ? t('Bola buatanmu') : t('Bola mengikuti suara'); }
     aiOrbRow.hidden = !f.aiOrb();
     paintPanels(); paintOut();
   }
@@ -358,7 +359,7 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
       aiForm.hidden = e.on && e.kind === 'research'; aiLoading.hidden = !e.on || e.kind !== 'research';
       strix.setLive(e.on, thinkingLevel());
       f.refineBtn.disabled = e.on;
-      live.textContent = e.on ? (e.kind === 'research' ? 'Strix sedang riset...' : 'Merapikan persona...') : '';
+      live.textContent = e.on ? (e.kind === 'research' ? t('Strix sedang riset...') : t('Merapikan persona...')) : '';
     }
     if (e.type === 'stage') live.textContent = e.text;
     if (e.type === 'applied') {
@@ -378,14 +379,14 @@ export function openForge(ctx: ScreenCtx, f: PersonaForm, onSaved: (p: CustomPer
   function paintOut() {
     outSave.hidden = !(f.hasDraft() || f.filled().name);
     const fl = f.filled();
-    tiles.forEach((t, i) => {
+    tiles.forEach((tl, i) => {
       const k = INGREDIENTS[i].k, v = valueOf(k);
-      (t.querySelector('.pf-ing-v') as HTMLElement).textContent = v || 'Kosong';
-      t.classList.toggle('filled', !!v && fl[k]);
+      (tl.querySelector('.pf-ing-v') as HTMLElement).textContent = v || t('Kosong');
+      tl.classList.toggle('filled', !!v && fl[k]);
     });
     if (!f.isNew) return;
     const n = Object.values(fl).filter(Boolean).length;
-    capH.textContent = n <= 2 && !drops ? 'Bola ini masih kosong' : n >= 5 ? 'Bolanya hampir penuh' : 'Bolanya mulai terisi';
+    capH.textContent = n <= 2 && !drops ? t('Bola ini masih kosong') : n >= 5 ? t('Bolanya hampir penuh') : t('Bolanya mulai terisi');
   }
   /* ---------------- save: out of the sphere, the glass falls away, the orb flies on ---------------- */
   function trySave() {

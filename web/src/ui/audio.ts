@@ -8,6 +8,7 @@ import { svg } from '../icons';
 import { player } from '../player';
 import { fmtDur } from '../lib/recorder';
 import { orb as makeOrb, type OrbSpec } from './orb';
+import { t } from '../i18n';
 import { Leveler, makeLimiter, onLevelingChange } from '../lib/leveler';
 
 const all = new Set<HTMLAudioElement>();
@@ -59,8 +60,8 @@ export function miniPlayer(src: Blob | string, opts: { label?: string; sub?: str
   all.add(a);
   const ob = opts.orb ? makeOrb(opts.orb, { size: 48 }) : null;
   const icon = h('span', { class: 'mp-ic', html: svg('play') });
-  const btn = h('button', { type: 'button', class: 'mp-btn' + (ob ? ' has-orb' : ''), 'aria-label': `Putar ${opts.label || 'audio'}` }, ob, icon);
-  const range = h('input', { type: 'range', class: 'mp-range', min: '0', max: '1000', value: '0', step: '1', 'aria-label': 'Posisi' }) as HTMLInputElement;
+  const btn = h('button', { type: 'button', class: 'mp-btn' + (ob ? ' has-orb' : ''), 'aria-label': t('Putar {label}', { label: opts.label || 'audio' }) }, ob, icon);
+  const range = h('input', { type: 'range', class: 'mp-range', min: '0', max: '1000', value: '0', step: '1', 'aria-label': t('Posisi') }) as HTMLInputElement;
   const time = h('span', { class: 'mp-time' }, '0:00');
   const head = opts.label ? h('div', { class: 'mp-head' }, h('b', null, opts.label), opts.sub ? h('span', null, opts.sub) : null) : null;
   const el = h('div', { class: 'mp' + (opts.accent ? ' accent' : '') + (ob ? ' with-orb' : '') }, btn, h('div', { class: 'mp-main' }, head, h('div', { class: 'mp-bar' }, range, time))) as unknown as MiniPlayer;
@@ -74,7 +75,7 @@ export function miniPlayer(src: Blob | string, opts: { label?: string; sub?: str
     range.style.setProperty('--p', (Number(range.value) / 10) + '%');
     time.textContent = a.paused && a.currentTime === 0 ? fmtDur(dur) || '0:00' : `${fmtDur(a.currentTime)} / ${fmtDur(dur)}`;
     icon.innerHTML = svg(a.paused ? 'play' : 'pause');
-    btn.setAttribute('aria-label', `${a.paused ? 'Putar' : 'Jeda'} ${opts.label || 'audio'}`);
+    btn.setAttribute('aria-label', a.paused ? t('Putar {label}', { label: opts.label || 'audio' }) : t('Jeda {label}', { label: opts.label || 'audio' }));
     el.classList.toggle('playing', !a.paused);
     ob?.setLive(!a.paused, () => levelOf(a));
   };

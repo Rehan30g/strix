@@ -1,5 +1,7 @@
 /* Web Speech API (speech-to-text) wrapper. Chrome / Edge only; check hasSpeech() first. */
 
+import { t } from '../i18n';
+
 const SR: any = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 export const hasSpeech = (): boolean => !!SR;
 
@@ -13,16 +15,16 @@ export interface ListenOpts {
 export interface Listening { stop: () => void; abort: () => void }
 
 const ERR: Record<string, string> = {
-  'not-allowed': 'Izin mikrofon ditolak. Aktifkan di pengaturan browser.',
-  'service-not-allowed': 'Izin mikrofon ditolak. Aktifkan di pengaturan browser.',
-  'audio-capture': 'Mikrofon tidak ditemukan.',
-  network: 'Pengenalan suara butuh koneksi internet.',
+  'not-allowed': t('Izin mikrofon ditolak. Aktifkan di pengaturan browser.'),
+  'service-not-allowed': t('Izin mikrofon ditolak. Aktifkan di pengaturan browser.'),
+  'audio-capture': t('Mikrofon tidak ditemukan.'),
+  network: t('Pengenalan suara butuh koneksi internet.'),
   'no-speech': '',
   aborted: '',
 };
 
 export function listen(o: ListenOpts): Listening | null {
-  if (!SR) { o.onError?.('unsupported', 'Browser ini tidak mendukung pengenalan suara. Pakai Chrome atau Edge.'); return null; }
+  if (!SR) { o.onError?.('unsupported', t('Browser ini tidak mendukung pengenalan suara. Pakai Chrome atau Edge.')); return null; }
   const rec = new SR();
   rec.lang = o.lang; rec.interimResults = true; rec.continuous = !!o.continuous;
   let finalText = '', last = '', ended = false;

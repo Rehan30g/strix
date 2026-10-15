@@ -9,6 +9,7 @@ import { player } from '../player';
 import { orb, voiceOrb, type OrbEl } from './orb';
 import { shortName, categoryLabel } from '../lib/collection';
 import type { Voice } from '../api';
+import { t } from '../i18n';
 
 export { shortName };
 
@@ -31,7 +32,7 @@ export async function previewVoice(v: Voice): Promise<void> {
   previewing = v.id;
   if (v.previewUrl) {
     try { await player.playUrl(v.previewUrl, 'preview:' + v.id); }
-    catch { previewing = ''; toast('Contoh suara tidak bisa diputar.', { kind: 'bad' }); }
+    catch { previewing = ''; toast(t('Contoh suara tidak bisa diputar.'), { kind: 'bad' }); }
     return;
   }
   player.stop();
@@ -43,12 +44,12 @@ export async function previewVoice(v: Voice): Promise<void> {
 export function voiceOrbButton(v: Voice, size = 44): HTMLButtonElement {
   const o = orb(voiceOrb(v.id), { size });
   const badge = h('span', { class: 'ob-badge', html: svg('play') });
-  const b = h('button', { type: 'button', class: 'orb-btn', 'aria-label': `Putar contoh ${shortName(v)}` }, o, badge);
+  const b = h('button', { type: 'button', class: 'orb-btn', 'aria-label': t('Putar contoh {name}', { name: shortName(v) }) }, o, badge);
   const sync = () => {
     const on = previewingId() === v.id;
     badge.innerHTML = svg(on ? 'stop' : 'play');
     b.classList.toggle('on', on);
-    b.setAttribute('aria-label', `${on ? 'Hentikan' : 'Putar'} contoh ${shortName(v)}`);
+    b.setAttribute('aria-label', on ? t('Hentikan contoh {name}', { name: shortName(v) }) : t('Putar contoh {name}', { name: shortName(v) }));
     o.setLive(on, previewLevel(v.id));
   };
   b.onclick = (e) => { e.stopPropagation(); if (previewingId() === v.id) player.stop(); else previewVoice(v); sync(); };
@@ -64,22 +65,22 @@ export function voicePicker(o: { value: string; onChange: (id: string) => void; 
   const name = h('span', { class: 'vp-name' });
   const meta = h('span', { class: 'vp-meta' });
   const ob = orb(voiceOrb(value), { size: 40 });
-  const btn = h('button', { type: 'button', class: 'vp-btn', 'aria-haspopup': 'dialog', 'aria-label': o.label || 'Pilih suara' },
+  const btn = h('button', { type: 'button', class: 'vp-btn', 'aria-haspopup': 'dialog', 'aria-label': o.label || t('Pilih suara') },
     ob, h('span', { class: 'vp-t' }, name, meta), h('span', { class: 'vp-chev', html: svg('chevronDown') }));
-  const play = h('button', { type: 'button', class: 'btn icon vp-play', title: 'Dengarkan contoh', 'aria-label': 'Dengarkan contoh suara', html: svg('play') });
+  const play = h('button', { type: 'button', class: 'btn icon vp-play', title: t('Dengarkan contoh'), 'aria-label': t('Dengarkan contoh suara'), html: svg('play') });
   const el = h('div', { class: 'vp' }, btn, play) as unknown as VoicePicker;
   el.orb = ob;
 
   const find = (id: string) => (store.get().voices || []).find((v) => v.id === id);
   /** A voice that is allowed but not in the collection (e.g. a persona's default). */
-  const pseudo = (id: string): Voice => ({ id, name: o.unknownLabel || 'Suara bawaan', category: 'premade', own: false });
+  const pseudo = (id: string): Voice => ({ id, name: o.unknownLabel || t('Suara bawaan'), category: 'premade', own: false });
   const paint = () => {
     const v = find(value);
     ob.setSpec(voiceOrb(value));
     ob.classList.toggle('empty', !value);
-    if (!value) { name.textContent = o.emptyLabel || 'Pilih suara'; meta.textContent = o.emptyHint || ''; }
+    if (!value) { name.textContent = o.emptyLabel || t('Pilih suara'); meta.textContent = o.emptyHint || ''; }
     else if (v) { name.textContent = shortName(v); meta.textContent = [categoryLabel(v), voiceMeta(v)].filter(Boolean).join(' · '); }
-    else { name.textContent = store.get().voices ? o.unknownLabel || 'Suara di luar koleksi' : 'Memuat suara...'; meta.textContent = store.get().voices ? 'Ketuk untuk memilih dari koleksimu' : ''; }
+    else { name.textContent = store.get().voices ? o.unknownLabel || t('Suara di luar koleksi') : t('Memuat suara...'); meta.textContent = store.get().voices ? t('Ketuk untuk memilih dari koleksimu') : ''; }
     play.disabled = !value || !store.get().voices;
     syncPlay();
   };
@@ -101,17 +102,17 @@ export function voicePicker(o: { value: string; onChange: (id: string) => void; 
   onDisconnect(el, store.select((s) => s.voices, paint));
   btn.onclick = () => openVoiceList(value, (id) => { value = id; paint(); o.onChange(id); }, o.emptyLabel, value && !find(value) ? pseudo(value) : null);
   paint();
-  loadVoices().then(paint).catch(() => { name.textContent = 'Gagal memuat suara'; });
+  loadVoices().then(paint).catch(() => { name.textContent = t('Gagal memuat suara'); });
   return el;
 }
 
 function openVoiceList(current: string, pick: (id: string) => void, emptyLabel?: string, extra?: Voice | null) {
   let q = '';
-  const search = h('input', { class: 'input', type: 'search', placeholder: 'Cari di koleksimu...', 'aria-label': 'Cari suara', autocomplete: 'off' }) as HTMLInputElement;
-  const list = h('div', { class: 'vl', role: 'listbox', 'aria-label': 'Koleksi suara' });
-  const libLink = h('a', { class: 'vl-lib', href: '#/voices/library', html: svg('search') }, h('span', null, h('b', null, 'Cari di Library'), h('small', null, 'Tambah suara baru ke koleksimu')), h('span', { class: 'vl-lib-ch', html: svg('chevronRight') }));
+  const search = h('input', { class: 'input', type: 'search', placeholder: t('Cari di koleksimu...'), 'aria-label': t('Cari suara'), autocomplete: 'off' }) as HTMLInputElement;
+  const list = h('div', { class: 'vl', role: 'listbox', 'aria-label': t('Koleksi suara') });
+  const libLink = h('a', { class: 'vl-lib', href: '#/voices/library', html: svg('search') }, h('span', null, h('b', null, t('Cari di Library')), h('small', null, t('Tambah suara baru ke koleksimu'))), h('span', { class: 'vl-lib-ch', html: svg('chevronRight') }));
   const body = h('div', { class: 'vl-wrap' }, h('div', { class: 'vl-search', html: svg('search') }, search), list, libLink);
-  const m = modal({ title: 'Pilih suara', body, cls: 'vl-dlg' });
+  const m = modal({ title: t('Pilih suara'), body, cls: 'vl-dlg' });
 
   const row = (v: Voice | null) => {
     const id = v?.id || '';
@@ -119,8 +120,8 @@ function openVoiceList(current: string, pick: (id: string) => void, emptyLabel?:
     const lead = v ? voiceOrbButton(v, 40) : h('span', { class: 'vl-play ghost', html: svg('sparkle') });
     const r = h('div', { class: 'vl-row' + (sel ? ' sel' : ''), role: 'option', 'aria-selected': String(sel), tabindex: '0' },
       lead,
-      h('div', { class: 'vl-t' }, h('b', null, v ? shortName(v) : emptyLabel || ''), h('span', null, v ? (voiceMeta(v) || categoryLabel(v)) : 'Pakai suara bawaan')),
-      v && v.category === 'shared' ? h('span', { class: 'badge accent' }, 'Bersama') : null,
+      h('div', { class: 'vl-t' }, h('b', null, v ? shortName(v) : emptyLabel || ''), h('span', null, v ? (voiceMeta(v) || categoryLabel(v)) : t('Pakai suara bawaan'))),
+      v && v.category === 'shared' ? h('span', { class: 'badge accent' }, t('Bersama')) : null,
       sel ? h('span', { class: 'vl-check', html: svg('check') }) : null);
     const choose = () => { player.stop(); pick(id); m.close(); };
     r.onclick = choose;
@@ -134,11 +135,11 @@ function openVoiceList(current: string, pick: (id: string) => void, emptyLabel?:
     const own = all.filter((v) => v.own && match(v)), shared = all.filter((v) => !v.own && v.category === 'shared' && match(v)), rest = all.filter((v) => !v.own && v.category !== 'shared' && match(v));
     const out: Node[] = [];
     if (emptyLabel !== undefined && !q) out.push(row(null));
-    if (extra && !q) out.push(h('div', { class: 'vl-sec' }, 'Bawaan persona'), row(extra));
-    if (own.length) out.push(h('div', { class: 'vl-sec' }, 'Milikmu'), ...own.map(row));
-    if (shared.length) out.push(h('div', { class: 'vl-sec' }, 'Bersama'), ...shared.map(row));
-    if (rest.length) out.push(h('div', { class: 'vl-sec' }, 'Dari Library'), ...rest.map(row));
-    if (!own.length && !rest.length && !shared.length) out.push(h('div', { class: 'empty', style: 'padding:28px 8px' }, h('p', null, q ? 'Tidak ada yang cocok di koleksimu.' : 'Koleksimu masih kosong. Tambahkan suara dari Library.')));
+    if (extra && !q) out.push(h('div', { class: 'vl-sec' }, t('Bawaan persona')), row(extra));
+    if (own.length) out.push(h('div', { class: 'vl-sec' }, t('Milikmu')), ...own.map(row));
+    if (shared.length) out.push(h('div', { class: 'vl-sec' }, t('Bersama')), ...shared.map(row));
+    if (rest.length) out.push(h('div', { class: 'vl-sec' }, t('Dari Library')), ...rest.map(row));
+    if (!own.length && !rest.length && !shared.length) out.push(h('div', { class: 'empty', style: 'padding:28px 8px' }, h('p', null, q ? t('Tidak ada yang cocok di koleksimu.') : t('Koleksimu masih kosong. Tambahkan suara dari Library.'))));
     list.replaceChildren(...out);
   };
   search.oninput = () => { q = search.value.trim().toLowerCase(); paint(); };

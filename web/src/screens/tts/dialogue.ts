@@ -12,6 +12,7 @@ import { voicePicker, type VoicePicker } from '../../ui/voicepicker';
 import { miniPlayer } from '../../ui/audio';
 import { orb, personaOrb, type OrbEl } from '../../ui/orb';
 import { autoTagLines, INTENSITY, type Intensity } from '../../lib/autotag';
+import { t } from '../../i18n';
 
 export const MAX_SPEAKERS = 6;
 const TAGS = ['laughs', 'chuckling', 'sighing', 'whispering', 'excited', 'warmly', 'sarcastic', 'curious', 'nervous', 'pause', 'gasping', 'shouting'];
@@ -84,7 +85,7 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   let dlCtrl: AbortController | null = null;
 
   /* ---------- editor (transparent textarea over a painted backdrop) ---------- */
-  const ta = h('textarea', { class: 'tts-text', spellcheck: true, placeholder: 'Maya: Halo! Apa kabar?\nRaka: [laughs] Baik banget...', 'aria-label': 'Naskah dialog' }) as HTMLTextAreaElement;
+  const ta = h('textarea', { class: 'tts-text', spellcheck: true, placeholder: t('Maya: Halo! Apa kabar?\nRaka: [laughs] Baik banget...'), 'aria-label': t('Naskah dialog') }) as HTMLTextAreaElement;
   ta.value = settings.local.get('studio.dialog.draft', DIALOG_SAMPLE);
   const backIn = h('div', { class: 'tts-back-in' });
   const back = h('div', { class: 'tts-back', 'aria-hidden': 'true' }, backIn);
@@ -154,11 +155,11 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   const rows = new Map<string, Row>();
   const castList = h('div', { class: 'mspk-cast-list', role: 'list' });
   const castCount = h('span', { class: 'mspk-cast-n' });
-  const addBtn = h('button', { type: 'button', class: 'btn sm soft', html: S('plus') }, h('span', null, 'Tambah'));
+  const addBtn = h('button', { type: 'button', class: 'btn sm soft', html: S('plus') }, h('span', null, t('Tambah')));
   const castWarn = h('div', { class: 'notice warn mspk-warn', hidden: true, html: S('alert') });
-  const castEmpty = h('div', { class: 'mspk-empty' }, h('p', null, 'Tulis naskah dengan format ', h('code', null, 'Nama: kalimat'), '. Pembicara muncul di sini otomatis.'));
-  const castBox = h('section', { class: 'mspk-cast', 'aria-label': 'Pembicara' },
-    h('div', { class: 'mspk-cast-h' }, h('h2', null, 'Pembicara'), castCount, h('span', { class: 'grow' }), addBtn),
+  const castEmpty = h('div', { class: 'mspk-empty' }, h('p', null, ...t('Tulis naskah dengan format {fmt}. Pembicara muncul di sini otomatis.', { fmt: '\u0001' }).split('\u0001').flatMap((x, i) => (i ? [h('code', null, t('Nama: kalimat')), x] : [x]))));
+  const castBox = h('section', { class: 'mspk-cast', 'aria-label': t('Pembicara') },
+    h('div', { class: 'mspk-cast-h' }, h('h2', null, t('Pembicara')), castCount, h('span', { class: 'grow' }), addBtn),
     castEmpty, castList, castWarn);
 
   const voicesList = () => ctx.store.get().voices || [];
@@ -179,13 +180,13 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   }
   function makeRow(key: string, name: string): Row {
     const ob = orb(orbSpecOf(key, name), { size: 44, cls: 'mspk-orb' });
-    const nameIn = h('input', { class: 'input mspk-name', value: name, maxlength: 40, 'aria-label': `Nama pembicara ${name}`, autocomplete: 'off', spellcheck: false }) as HTMLInputElement;
+    const nameIn = h('input', { class: 'input mspk-name', value: name, maxlength: 40, 'aria-label': t('Nama pembicara {name}', { name }), autocomplete: 'off', spellcheck: false }) as HTMLInputElement;
     const count = h('span', { class: 'mspk-row-n' });
-    const vp = voicePicker({ value: voiceOf(key), label: `Suara untuk ${name}`, onChange: (v) => { setCast(row.key, { voiceId: v }); repaintOrbs(); paint(); } });
-    const tuneBtn = h('button', { type: 'button', class: 'btn icon ghost mspk-tune', title: 'Tuning pembicara', 'aria-label': `Tuning untuk ${name}`, html: S('sliders') });
-    const more = h('button', { type: 'button', class: 'btn icon ghost', title: 'Lainnya', 'aria-label': `Menu ${name}`, html: S('moreV') });
+    const vp = voicePicker({ value: voiceOf(key), label: t('Suara untuk {name}', { name }), onChange: (v) => { setCast(row.key, { voiceId: v }); repaintOrbs(); paint(); } });
+    const tuneBtn = h('button', { type: 'button', class: 'btn icon ghost mspk-tune', title: t('Tuning pembicara'), 'aria-label': t('Tuning untuk {name}', { name }), html: S('sliders') });
+    const more = h('button', { type: 'button', class: 'btn icon ghost', title: t('Lainnya'), 'aria-label': t('Menu {name}', { name }), html: S('moreV') });
     const el = h('div', { class: 'mspk-row', role: 'listitem' },
-      h('button', { type: 'button', class: 'mspk-orb-btn', title: `Sisipkan baris ${name}`, 'aria-label': `Sisipkan baris untuk ${name}` }, ob),
+      h('button', { type: 'button', class: 'mspk-orb-btn', title: t('Sisipkan baris {name}', { name }), 'aria-label': t('Sisipkan baris untuk {name}', { name }) }, ob),
       h('div', { class: 'mspk-row-id' }, nameIn, count),
       h('div', { class: 'mspk-row-v' }, vp),
       h('div', { class: 'mspk-row-a' }, tuneBtn, more));
@@ -196,9 +197,9 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
     nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); nameIn.blur(); } if (e.key === 'Escape') { nameIn.value = currentName(row.key); nameIn.blur(); } });
     tuneBtn.onclick = () => openTune(row.key);
     more.onclick = () => ui.popover(more, h('div', { class: 'auto-menu' },
-      ui.menuItem('Sisipkan baris', 'plus', () => insertSpeakerLine(currentName(row.key))),
-      ui.menuItem('Tuning pembicara', 'sliders', () => openTune(row.key)),
-      ui.menuItem('Hapus pembicara', 'trash', () => removeSpeaker(row.key), 'danger')), { align: 'end' });
+      ui.menuItem(t('Sisipkan baris'), 'plus', () => insertSpeakerLine(currentName(row.key))),
+      ui.menuItem(t('Tuning pembicara'), 'sliders', () => openTune(row.key)),
+      ui.menuItem(t('Hapus pembicara'), 'trash', () => removeSpeaker(row.key), 'danger')), { align: 'end' });
     return row;
   }
   const currentName = (key: string) => parsed.speakers.find((s) => s.key === key)?.name || key;
@@ -206,10 +207,10 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   function rename(row: Row, raw: string) {
     const name = cleanName(raw);
     const old = currentName(row.key);
-    if (!name) { row.name.value = old; ui.toast('Nama pembicara tidak boleh kosong.', { kind: 'warn' }); return; }
+    if (!name) { row.name.value = old; ui.toast(t('Nama pembicara tidak boleh kosong.'), { kind: 'warn' }); return; }
     if (name === old) { row.name.value = old; return; }
     const key = speakerKey(name);
-    if (key !== row.key && parsed.speakers.some((s) => s.key === key)) { row.name.value = old; ui.toast(`Sudah ada pembicara bernama ${name}.`, { kind: 'warn' }); return; }
+    if (key !== row.key && parsed.speakers.some((s) => s.key === key)) { row.name.value = old; ui.toast(t('Sudah ada pembicara bernama {name}.', { name }), { kind: 'warn' }); return; }
     let next = ta.value;
     for (const l of [...parsed.lines].reverse()) if (l.named && l.key === row.key) next = next.slice(0, l.nameFrom) + name + next.slice(l.nameTo);
     if (key !== row.key) {
@@ -223,16 +224,16 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   async function removeSpeaker(key: string) {
     const name = currentName(key);
     const mine = parsed.lines.filter((l) => l.key === key);
-    if (mine.some((l) => l.text) && !(await ui.confirm({ title: `Hapus ${name}?`, message: `${mine.length} baris milik ${name} ikut dihapus dari naskah. Kamu bisa mengurungkannya dengan Ctrl+Z.`, confirm: 'Hapus', danger: true }))) return;
+    if (mine.some((l) => l.text) && !(await ui.confirm({ title: t('Hapus {name}?', { name }), message: t('{n} baris milik {name} ikut dihapus dari naskah. Kamu bisa mengurungkannya dengan Ctrl+Z.', { n: mine.length, name }), confirm: t('Hapus'), danger: true }))) return;
     let next = ta.value;
     for (const l of [...mine].reverse()) next = next.slice(0, l.lineFrom) + next.slice(Math.min(next.length, l.lineTo + 1));
     setCast(key, null);
     setText(next.replace(/\n{3,}/g, '\n\n').replace(/^\n+/, ''));
   }
   addBtn.onclick = () => {
-    if (parsed.speakers.length >= MAX_SPEAKERS) { ui.toast(`Maksimal ${MAX_SPEAKERS} pembicara.`, { kind: 'warn' }); return; }
+    if (parsed.speakers.length >= MAX_SPEAKERS) { ui.toast(t('Maksimal {n} pembicara.', { n: MAX_SPEAKERS }), { kind: 'warn' }); return; }
     const taken = new Set(parsed.speakers.map((s) => s.key));
-    const name = NAMES.find((n) => !taken.has(speakerKey(n))) || `Pembicara ${parsed.speakers.length + 1}`;
+    const name = NAMES.find((n) => !taken.has(speakerKey(n))) || t('Pembicara {n}', { n: parsed.speakers.length + 1 });
     const v = ta.value.replace(/\s+$/, '');
     setText(v ? `${v}\n${name}: ` : `${name}: `);
     ta.setSelectionRange(ta.value.length, ta.value.length); ta.focus();
@@ -251,10 +252,10 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
       similarity: slider({ label: 'Similarity', min: 0, max: 1, step: 0.05, value: eff().similarity, onInput: set('similarity') }),
       speed: slider({ label: 'Speed', min: 0.7, max: 1.2, step: 0.05, value: eff().speed, onInput: set('speed'), fmt: (v) => v.toFixed(2) + 'x' }),
     };
-    const follow = switchRow('Ikuti tuning global', !own, (on) => {
+    const follow = switchRow(t('Ikuti tuning global'), !own, (on) => {
       if (on) { own = null; const e = eff(); sl.stability.setValue(e.stability); sl.similarity.setValue(e.similarity); sl.speed.setValue(e.speed); save(); }
-    }, 'Tuning suara di bawah berlaku untuk semua pembicara');
-    ui.modal({ title: `Tuning ${name}`, body: h('div', { class: 'stack', style: 'gap:14px' }, follow, sl.stability, sl.similarity, sl.speed), cls: 'mspk-tune-dlg', onClose: () => paintRows() });
+    }, t('Tuning suara di bawah berlaku untuk semua pembicara'));
+    ui.modal({ title: t('Tuning {name}', { name }), body: h('div', { class: 'stack', style: 'gap:14px' }, follow, sl.stability, sl.similarity, sl.speed), cls: 'mspk-tune-dlg', onClose: () => paintRows() });
   }
 
   function syncRows() {
@@ -275,14 +276,14 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
     for (const r of rows.values()) {
       const name = currentName(r.key);
       if (document.activeElement !== r.name) r.name.value = name;
-      r.name.setAttribute('aria-label', `Nama pembicara ${name}`);
+      r.name.setAttribute('aria-label', t('Nama pembicara {name}', { name }));
       const n = counts.get(r.key) || 0;
-      r.count.textContent = `${n} baris`;
+      r.count.textContent = t('{n} baris', { n });
       r.el.dataset.c = String(colorOf(r.key));
       if (r.vp.value !== voiceOf(r.key)) r.vp.setValue(voiceOf(r.key));
       const own = prefs().cast[r.key]?.tune;
       r.tuneBtn.classList.toggle('on', !!own);
-      r.tuneBtn.title = own ? 'Tuning khusus aktif' : 'Tuning pembicara (ikut global)';
+      r.tuneBtn.title = own ? t('Tuning khusus aktif') : t('Tuning pembicara (ikut global)');
     }
     repaintOrbs();
     castCount.textContent = `${Math.min(parsed.speakers.length, MAX_SPEAKERS)}/${MAX_SPEAKERS}`;
@@ -296,74 +297,74 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   }
 
   /* ---------- quick insert + tags + auto tag ---------- */
-  const chipsSpk = h('div', { class: 'tag-row mspk-spk-row', role: 'group', 'aria-label': 'Sisipkan baris pembicara' });
+  const chipsSpk = h('div', { class: 'tag-row mspk-spk-row', role: 'group', 'aria-label': t('Sisipkan baris pembicara') });
   function paintChips() {
     chipsSpk.replaceChildren(...parsed.speakers.slice(0, MAX_SPEAKERS).map((s) => {
-      const c = h('button', { type: 'button', class: `chip mspk-chip c${colorOf(s.key)}`, 'data-k': s.key, title: `Baris baru untuk ${s.name}` }, orb(orbSpecOf(s.key, s.name), { size: 18 }), s.name);
+      const c = h('button', { type: 'button', class: `chip mspk-chip c${colorOf(s.key)}`, 'data-k': s.key, title: t('Baris baru untuk {name}', { name: s.name }) }, orb(orbSpecOf(s.key, s.name), { size: 18 }), s.name);
       c.onclick = () => insertSpeakerLine(s.name);
       return c;
-    }), (() => { const b = h('button', { type: 'button', class: 'chip mspk-chip add', html: S('plus') }, 'Pembicara'); b.onclick = () => addBtn.click(); return b; })());
+    }), (() => { const b = h('button', { type: 'button', class: 'chip mspk-chip add', html: S('plus') }, t('Pembicara')); b.onclick = () => addBtn.click(); return b; })());
   }
-  const chipsTag = h('div', { class: 'tag-row', role: 'group', 'aria-label': 'Sisipkan audio tag' },
+  const chipsTag = h('div', { class: 'tag-row', role: 'group', 'aria-label': t('Sisipkan audio tag') },
     ...TAGS.map((t) => h('button', { type: 'button', class: 'chip tag-chip', onclick: () => insertTag(t) }, `[${t}]`)));
   let tagCtrl: AbortController | null = null;
   let undoText: string | null = null;
-  const autoBtn = h('button', { type: 'button', class: 'btn sm soft tts-auto', 'aria-haspopup': 'menu', title: 'Sisipkan audio tag per baris sesuai pembicara (kata tidak diubah)', html: S('wand') }, h('span', null, 'Auto tag'), h('span', { class: 'tts-auto-c', html: S('chevronDown') }));
-  const undoBtn = h('button', { type: 'button', class: 'btn sm ghost', hidden: true, title: 'Urungkan auto tag', html: S('refresh') }, h('span', null, 'Urungkan'));
-  const sampleBtn = h('button', { type: 'button', class: 'btn sm ghost', title: 'Isi dengan contoh naskah 3 pembicara', html: S('sparkle') }, h('span', null, 'Coba contoh'));
+  const autoBtn = h('button', { type: 'button', class: 'btn sm soft tts-auto', 'aria-haspopup': 'menu', title: t('Sisipkan audio tag per baris sesuai pembicara (kata tidak diubah)'), html: S('wand') }, h('span', null, 'Auto tag'), h('span', { class: 'tts-auto-c', html: S('chevronDown') }));
+  const undoBtn = h('button', { type: 'button', class: 'btn sm ghost', hidden: true, title: t('Urungkan auto tag'), html: S('refresh') }, h('span', null, t('Urungkan')));
+  const sampleBtn = h('button', { type: 'button', class: 'btn sm ghost', title: t('Isi dengan contoh naskah 3 pembicara'), html: S('sparkle') }, h('span', null, t('Coba contoh')));
   autoBtn.onclick = () => {
     if (tagCtrl) { tagCtrl.abort(); return; }
     const last = prefs().autotag || 'normal';
-    ui.popover(autoBtn, h('div', { class: 'auto-menu' }, h('div', { class: 'menu-h' }, 'Intensitas tag'),
+    ui.popover(autoBtn, h('div', { class: 'auto-menu' }, h('div', { class: 'menu-h' }, t('Intensitas tag')),
       ...INTENSITY.map(([k, label, hint]) => { const b = ui.menuItem(label, k === last ? 'check' : 'tag', () => runAutoTag(k)); b.append(h('small', null, hint)); return b; })), { align: 'start' });
   };
   async function runAutoTag(k: Intensity) {
     const before = ta.value;
     const ls = parsed.lines.filter((l) => l.text);
-    if (!ls.length) { ui.toast('Tulis naskahnya dulu.', { kind: 'warn' }); return; }
+    if (!ls.length) { ui.toast(t('Tulis naskahnya dulu.'), { kind: 'warn' }); return; }
     patch({ autotag: k });
     tagCtrl = new AbortController();
-    autoBtn.classList.add('busy'); autoBtn.querySelector('span')!.textContent = 'Menandai...';
+    autoBtn.classList.add('busy'); autoBtn.querySelector('span')!.textContent = t('Menandai...');
     try {
       const r = await autoTagLines(ls.map((l) => ({ speaker: l.name, text: l.text })), k, tagCtrl.signal);
-      if (ta.value !== before) { ui.toast('Naskah berubah saat menunggu, hasil auto tag tidak dipakai.', { kind: 'warn' }); return; }
+      if (ta.value !== before) { ui.toast(t('Naskah berubah saat menunggu, hasil auto tag tidak dipakai.'), { kind: 'warn' }); return; }
       let next = before;
       for (let i = ls.length - 1; i >= 0; i--) next = next.slice(0, ls[i].from) + r.lines[i] + next.slice(ls[i].to);
-      if (next === before) { ui.toast(r.fallback ? 'AI belum bisa menambahkan tag kali ini. Coba lagi.' : 'Tidak ada tag baru yang perlu ditambahkan.', { kind: r.fallback ? 'warn' : 'info', timeout: 2600 }); return; }
+      if (next === before) { ui.toast(r.fallback ? t('AI belum bisa menambahkan tag kali ini. Coba lagi.') : t('Tidak ada tag baru yang perlu ditambahkan.'), { kind: r.fallback ? 'warn' : 'info', timeout: 2600 }); return; }
       undoText = before; undoBtn.hidden = false;
       setText(next);
-      ui.toast(r.mock ? 'Tag disisipkan (mode contoh).' : 'Tag disisipkan per baris. Kata-katamu tidak diubah.', { kind: 'ok', timeout: 2600 });
+      ui.toast(r.mock ? t('Tag disisipkan (mode contoh).') : t('Tag disisipkan per baris. Kata-katamu tidak diubah.'), { kind: 'ok', timeout: 2600 });
     } catch (e: any) {
-      if (e?.code !== 'aborted') ui.toast(e?.message || 'Auto tag gagal.', { kind: 'bad', title: 'Auto tag gagal' });
+      if (e?.code !== 'aborted') ui.toast(e?.message || t('Auto tag gagal.'), { kind: 'bad', title: t('Auto tag gagal') });
     } finally { tagCtrl = null; autoBtn.classList.remove('busy'); autoBtn.querySelector('span')!.textContent = 'Auto tag'; }
   }
   undoBtn.onclick = () => { if (undoText == null) return; setText(undoText); undoText = null; undoBtn.hidden = true; };
   sampleBtn.onclick = async () => {
-    if (ta.value.trim() && ta.value !== DIALOG_SAMPLE && !(await ui.confirm({ title: 'Ganti dengan contoh?', message: 'Naskahmu diganti dengan contoh dialog 3 pembicara (bisa diurungkan dengan Ctrl+Z).', confirm: 'Ganti' }))) return;
+    if (ta.value.trim() && ta.value !== DIALOG_SAMPLE && !(await ui.confirm({ title: t('Ganti dengan contoh?'), message: t('Naskahmu diganti dengan contoh dialog 3 pembicara (bisa diurungkan dengan Ctrl+Z).'), confirm: t('Ganti') }))) return;
     setText(DIALOG_SAMPLE);
   };
   const counter = h('span', { class: 'tts-count', 'aria-live': 'polite' });
-  const clearBtn = h('button', { type: 'button', class: 'btn ghost icon sm', title: 'Kosongkan', 'aria-label': 'Kosongkan naskah', html: S('x') });
+  const clearBtn = h('button', { type: 'button', class: 'btn ghost icon sm', title: t('Kosongkan'), 'aria-label': t('Kosongkan naskah'), html: S('x') });
   clearBtn.onclick = () => { setText(''); ta.focus(); };
   const editor = h('section', { class: 'tts-editor mspk-editor' },
     fieldBox,
-    h('div', { class: 'tts-editor-f' }, h('span', { class: 'tag-label', html: S('users') }, 'Baris'), chipsSpk),
+    h('div', { class: 'tts-editor-f' }, h('span', { class: 'tag-label', html: S('users') }, t('Baris')), chipsSpk),
     h('div', { class: 'tts-editor-f' }, h('span', { class: 'tag-label', html: S('tag') }, 'Tag'), chipsTag),
     h('div', { class: 'tts-editor-meta' }, h('div', { class: 'tts-meta-l' }, autoBtn, undoBtn, sampleBtn), h('div', { class: 'tts-meta-r' }, counter, clearBtn)));
 
   /* ---------- playback ---------- */
   const playBtn = h('button', { type: 'button', class: 'btn primary lg tts-play' });
   const dlBtn = h('button', { type: 'button', class: 'btn lg tts-dl' });
-  const pace = seg<Pace>([['fast', 'Cepat'], ['natural', 'Alami'], ['relaxed', 'Santai']], prefs().pace || 'natural', (v) => patch({ pace: v }), 'Jeda antar-baris');
+  const pace = seg<Pace>([['fast', t('Cepat')], ['natural', t('Alami')], ['relaxed', t('Santai')]], prefs().pace || 'natural', (v) => patch({ pace: v }), t('Jeda antar-baris'));
   const problems = h('div', { class: 'notice warn mspk-warn', hidden: true, html: S('alert') });
   const stageOrb = orb(orbSpecOf('', ''), { size: 56 });
   const stageName = h('b', { class: 'mspk-stage-name' });
   const stageText = h('div', { class: 'mspk-stage-text' });
   const stage = h('div', { class: 'mspk-stage', hidden: true, 'aria-live': 'polite' }, stageOrb, h('div', { class: 'mspk-stage-t' }, stageName, stageText));
   const result = h('div', { class: 'tts-result', 'aria-live': 'polite' });
-  const lineList = h('ol', { class: 'mspk-lines', 'aria-label': 'Urutan baris' });
+  const lineList = h('ol', { class: 'mspk-lines', 'aria-label': t('Urutan baris') });
   const linesSec = h('section', { class: 'stack mspk-lines-sec', style: 'gap:8px' },
-    h('div', { class: 'sec-head' }, h('h2', null, 'Urutan baris'), h('span', { class: 'hint' }, 'Ketuk baris untuk memutar dari sana')), lineList);
+    h('div', { class: 'sec-head' }, h('h2', null, t('Urutan baris')), h('span', { class: 'hint' }, t('Ketuk baris untuk memutar dari sana'))), lineList);
 
   /** Lines that will be spoken (non-empty), with their voice and tune. */
   const playable = () => parsed.lines.filter((l) => l.text && l.text.replace(/\[[^\]]*\]/g, '').trim());
@@ -371,13 +372,13 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   function issues(): string[] {
     const out: string[] = [];
     const ls = playable();
-    if (parsed.speakers.length > MAX_SPEAKERS) out.push(`Maksimal ${MAX_SPEAKERS} pembicara (sekarang ${parsed.speakers.length}). Gabungkan atau hapus beberapa nama.`);
-    if (ls.length > maxLines) out.push(`Maksimal ${maxLines} baris (sekarang ${ls.length}).`);
+    if (parsed.speakers.length > MAX_SPEAKERS) out.push(t('Maksimal {max} pembicara (sekarang {n}). Gabungkan atau hapus beberapa nama.', { max: MAX_SPEAKERS, n: parsed.speakers.length }));
+    if (ls.length > maxLines) out.push(t('Maksimal {max} baris (sekarang {n}).', { max: maxLines, n: ls.length }));
     const long = ls.findIndex((l) => l.text.length > lineMax);
-    if (long >= 0) out.push(`Baris ${long + 1} terlalu panjang (maks ${fmtNum(lineMax)} karakter per baris). Pecah jadi beberapa baris.`);
+    if (long >= 0) out.push(t('Baris {n} terlalu panjang (maks {max} karakter per baris). Pecah jadi beberapa baris.', { n: long + 1, max: fmtNum(lineMax) }));
     const total = ls.reduce((n, l) => n + l.text.length, 0);
-    if (total > maxChars) out.push(`Naskah terlalu panjang (${fmtNum(total)} / ${fmtNum(maxChars)} karakter).`);
-    if (voicesList().length && parsed.speakers.slice(0, MAX_SPEAKERS).some((s) => !voiceOf(s.key))) out.push('Pilih suara untuk setiap pembicara.');
+    if (total > maxChars) out.push(t('Naskah terlalu panjang ({n} / {max} karakter).', { n: fmtNum(total), max: fmtNum(maxChars) }));
+    if (voicesList().length && parsed.speakers.slice(0, MAX_SPEAKERS).some((s) => !voiceOf(s.key))) out.push(t('Pilih suara untuk setiap pembicara.'));
     return out;
   }
 
@@ -466,7 +467,7 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
     lineList.replaceChildren(...ls.map((l, i) => {
       const li = h('li', { class: 'mspk-line', 'data-c': String(colorOf(l.key)) });
       const txt = h('span', { class: 'mspk-line-text' }); ui.renderTagged(txt, l.text);
-      const b = h('button', { type: 'button', class: 'mspk-line-b', 'aria-label': `Putar dari baris ${i + 1}, ${l.name}` },
+      const b = h('button', { type: 'button', class: 'mspk-line-b', 'aria-label': t('Putar dari baris {n}, {name}', { n: i + 1, name: l.name }) },
         orb(orbSpecOf(l.key, l.name), { size: 28 }),
         h('span', { class: 'mspk-line-m' }, h('b', null, l.name), txt),
         h('span', { class: 'mspk-line-i', html: S('play') }));
@@ -482,18 +483,18 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
     const ls = playable();
     const iss = issues();
     const total = ls.reduce((n, l) => n + l.text.length, 0);
-    counter.textContent = `${ls.length} baris · ${fmtNum(total)} / ${fmtNum(maxChars)}`;
+    counter.textContent = t('{lines} baris · {n} / {max}', { lines: ls.length, n: fmtNum(total), max: fmtNum(maxChars) });
     counter.classList.toggle('over', total > maxChars || ls.length > maxLines);
     problems.hidden = !iss.length;
     problems.replaceChildren(...(problems.hidden ? [] : [h('div', { html: S('alert') }), h('div', null, ...iss.map((t) => h('div', null, t)))]));
     castWarn.hidden = parsed.speakers.length <= MAX_SPEAKERS;
-    castWarn.textContent = castWarn.hidden ? '' : `Terdeteksi ${parsed.speakers.length} pembicara: hanya ${MAX_SPEAKERS} yang didukung (${parsed.speakers.slice(MAX_SPEAKERS).map((s) => s.name).join(', ')} belum bisa dipakai).`;
+    castWarn.textContent = castWarn.hidden ? '' : t('Terdeteksi {n} pembicara: hanya {max} yang didukung ({names} belum bisa dipakai).', { n: parsed.speakers.length, max: MAX_SPEAKERS, names: parsed.speakers.slice(MAX_SPEAKERS).map((s) => s.name).join(', ') });
     const ok = ls.length > 0 && !iss.length;
     const playing = !!run && run.source === 'stream' && player.pending > 0;
     playBtn.disabled = !ok && !playing;
-    playBtn.innerHTML = S(playing ? 'stop' : 'play') + `<span>${playing ? 'Stop' : 'Putar dialog'}</span>`;
+    playBtn.innerHTML = S(playing ? 'stop' : 'play') + `<span>${playing ? 'Stop' : t('Putar dialog')}</span>`;
     dlBtn.disabled = !ok || !!dlCtrl;
-    dlBtn.innerHTML = dlCtrl ? '<span class="spinner"></span><span>Membuat...</span>' : S('download') + '<span>Unduh MP3</span>';
+    dlBtn.innerHTML = dlCtrl ? '<span class="spinner"></span><span>' + t('Membuat...') + '</span>' : S('download') + '<span>' + t('Unduh MP3') + '</span>';
   }
   playBtn.onclick = () => { if (run && run.source === 'stream' && player.pending > 0) { player.stop(); endRun(); return; } playFrom(0); };
 
@@ -518,12 +519,12 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
       const a = h('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
       const speakers = new Set(ls.map((l) => l.key)).size;
-      const mp = miniPlayer(blob, { label: 'Dialog siap', sub: `${name} · ${speakers} pembicara · ${(blob.size / 1024).toFixed(0)} KB`, orb: orbSpecOf(ls[0].key, ls[0].name), accent: true, knownDuration: dur });
+      const mp = miniPlayer(blob, { label: t('Dialog siap'), sub: t('{name} · {n} pembicara · {kb} KB', { name, n: speakers, kb: (blob.size / 1024).toFixed(0) }), orb: orbSpecOf(ls[0].key, ls[0].name), accent: true, knownDuration: dur });
       result.replaceChildren(mp);
       followFile(mp.audio, ls, offsets);
       api.usageChanged(); o.onHistory();
     } catch (e: any) {
-      if (e?.code !== 'aborted') ui.toast(e.message, { kind: 'bad', title: 'Gagal membuat MP3 dialog' });
+      if (e?.code !== 'aborted') ui.toast(e.message, { kind: 'bad', title: t('Gagal membuat MP3 dialog') });
     } finally { dlCtrl = null; paint(); }
   };
   /** While the merged mp3 plays, light the speaker of the line at the current time (X-Line-Offsets). */
@@ -549,7 +550,7 @@ export function dialogue(ctx: ScreenCtx, o: { onHistory: () => void }): DialogAp
   const el = h('div', { class: 'mspk stack' },
     castBox,
     editor,
-    h('div', { class: 'mspk-pace' }, h('span', { class: 'mspk-pace-l' }, 'Jeda antar-baris'), pace),
+    h('div', { class: 'mspk-pace' }, h('span', { class: 'mspk-pace-l' }, t('Jeda antar-baris')), pace),
     problems,
     stage,
     h('div', { class: 'tts-actions' }, playBtn, dlBtn),

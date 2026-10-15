@@ -15,13 +15,14 @@ import { receiveOrb, orbGhost, handOff } from '../../ui/transition';
 import { openOrbStudio } from '../../ui/orbstudio';
 import { type CustomPersona, LANGS, ACCENTS, cleanName, cleanAccent, langKey, langName, newId, orbSpecFor, splitClause, joinClause, saveCustom } from '../../lib/persona';
 import { openForge } from './forge';
+import { t } from '../../i18n';
 
 export const IDEAS = [
-  'Kapten bajak laut tua yang bijak tapi suka melebih-lebihkan cerita',
-  'Karakter seperti Sherlock Holmes dari cerita Arthur Conan Doyle',
-  'Penyiar radio larut malam yang tenang dan puitis',
+  t('Kapten bajak laut tua yang bijak tapi suka melebih-lebihkan cerita'),
+  t('Karakter seperti Sherlock Holmes dari cerita Arthur Conan Doyle'),
+  t('Penyiar radio larut malam yang tenang dan puitis'),
 ];
-const STAGES = ['Membaca idemu...', 'Mencari referensi...', 'Membaca sumber...', 'Menyusun sifat dan gaya bicara...', 'Menulis kalimat pembuka...', 'Hampir selesai...'];
+const STAGES = [t('Membaca idemu...'), t('Mencari referensi...'), t('Membaca sumber...'), t('Menyusun sifat dan gaya bicara...'), t('Menulis kalimat pembuka...'), t('Hampir selesai...')];
 
 export type FormField = 'name' | 'desc' | 'accent' | 'lang' | 'voice' | 'greet';
 export type FormEvent =
@@ -62,9 +63,9 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
 
   // the server's "Roleplay rules" clause (public figures) is kept apart so editing can never drop it
   let clause = '';
-  const name = h('input', { class: 'input', value: d.name, maxLength: 30, placeholder: 'mis. Kapten Rara', autocomplete: 'off' }) as HTMLInputElement;
-  const desc = h('textarea', { class: 'textarea', rows: 5, maxLength: 1500, placeholder: 'Siapa dia, sifatnya, cara bicaranya, situasinya.' }) as HTMLTextAreaElement;
-  const clauseBox = h('div', { class: 'notice info pa-clause', hidden: true, html: S('shield') }, h('span', null, 'Aturan roleplay tokoh publik (simulasi AI, tidak mengaku sebagai orang aslinya) disertakan otomatis dan tetap tersimpan saat kamu mengedit.'));
+  const name = h('input', { class: 'input', value: d.name, maxLength: 30, placeholder: t('mis. Kapten Rara'), autocomplete: 'off' }) as HTMLInputElement;
+  const desc = h('textarea', { class: 'textarea', rows: 5, maxLength: 1500, placeholder: t('Siapa dia, sifatnya, cara bicaranya, situasinya.') }) as HTMLTextAreaElement;
+  const clauseBox = h('div', { class: 'notice info pa-clause', hidden: true, html: S('shield') }, h('span', null, t('Aturan roleplay tokoh publik (simulasi AI, tidak mengaku sebagai orang aslinya) disertakan otomatis dan tetap tersimpan saat kamu mengedit.')));
   const setDesc = (full: string) => {
     const sp = splitClause(full);
     if (sp.clause) clause = sp.clause;
@@ -76,16 +77,16 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
   const lang = h('select', { class: 'select' }, ...LANGS.map(([k, l]) => new Option(l, k))) as HTMLSelectElement;
   lang.value = d.lang;
   const accId = 'acc-' + Math.random().toString(36).slice(2, 7);
-  const acc = h('input', { class: 'input', value: d.accent, placeholder: 'Kosong = tanpa aksen khusus', autocomplete: 'off', maxLength: 40 }) as HTMLInputElement;
+  const acc = h('input', { class: 'input', value: d.accent, placeholder: t('Kosong = tanpa aksen khusus'), autocomplete: 'off', maxLength: 40 }) as HTMLInputElement;
   acc.setAttribute('list', accId);
   const accList = h('datalist', { id: accId }, ...ACCENTS.map((a) => h('option', { value: a })));
   const firstVoice = (ctx.store.get().voices || [])[0]?.id || '';
   let voice = d.voiceId || firstVoice;
-  const vp = voicePicker({ value: voice, onChange: (v) => { voice = v; emit({ type: 'change', field: 'voice' }); }, emptyLabel: undefined, unknownLabel: 'Suara di luar koleksi' });
-  const greet = h('textarea', { class: 'textarea', rows: 2, maxLength: 300, placeholder: 'Opsional. Contoh: Hey! Ready for an adventure?' }) as HTMLTextAreaElement;
+  const vp = voicePicker({ value: voice, onChange: (v) => { voice = v; emit({ type: 'change', field: 'voice' }); }, emptyLabel: undefined, unknownLabel: t('Suara di luar koleksi') });
+  const greet = h('textarea', { class: 'textarea', rows: 2, maxLength: 300, placeholder: t('Opsional. Contoh: Hey! Ready for an adventure?') }) as HTMLTextAreaElement;
   greet.value = d.greeting;
-  const refineBtn = h('button', { type: 'button', class: 'btn soft sm', html: S('wand') }, h('span', null, 'Rapikan dengan AI')) as HTMLButtonElement;
-  const undoBtn = h('button', { type: 'button', class: 'btn ghost sm', hidden: true, html: S('refresh') }, h('span', null, 'Kembalikan')) as HTMLButtonElement;
+  const refineBtn = h('button', { type: 'button', class: 'btn soft sm', html: S('wand') }, h('span', null, t('Rapikan dengan AI'))) as HTMLButtonElement;
+  const undoBtn = h('button', { type: 'button', class: 'btn ghost sm', hidden: true, html: S('refresh') }, h('span', null, t('Kembalikan'))) as HTMLButtonElement;
   const aiInfo = h('div', { class: 'pa-info' });
   const msg = h('div', { class: 'pa-msg' });
   name.addEventListener('input', () => emit({ type: 'change', field: 'name' }));
@@ -95,16 +96,16 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
   greet.addEventListener('input', () => emit({ type: 'change', field: 'greet' }));
 
   /* ---------- AI path ---------- */
-  const idea = h('textarea', { class: 'textarea', rows: 3, maxLength: 500, placeholder: 'Contoh: "karakter seperti Sherlock Holmes dari cerita Arthur Conan Doyle", atau vibe: ramah, sarkastis, suka kopi.' }) as HTMLTextAreaElement;
-  const ideaLang = h('select', { class: 'select' }, new Option('Otomatis', ''), ...LANGS.map(([k, l]) => new Option(l, k))) as HTMLSelectElement;
-  const ideaChips = h('div', { class: 'pa-chips' }, ...IDEAS.map((t) => h('button', { type: 'button', class: 'chip', onclick: () => { idea.value = t; idea.focus({ preventScroll: true }); paintAi(); } }, t)));
-  const researchBtn = h('button', { type: 'button', class: 'btn primary block lg', html: S('search') }, h('span', null, 'Cari referensi')) as HTMLButtonElement;
+  const idea = h('textarea', { class: 'textarea', rows: 3, maxLength: 500, placeholder: t('Contoh: "karakter seperti Sherlock Holmes dari cerita Arthur Conan Doyle", atau vibe: ramah, sarkastis, suka kopi.') }) as HTMLTextAreaElement;
+  const ideaLang = h('select', { class: 'select' }, new Option(t('Otomatis'), ''), ...LANGS.map(([k, l]) => new Option(l, k))) as HTMLSelectElement;
+  const ideaChips = h('div', { class: 'pa-chips' }, ...IDEAS.map((s) => h('button', { type: 'button', class: 'chip', onclick: () => { idea.value = s; idea.focus({ preventScroll: true }); paintAi(); } }, s)));
+  const researchBtn = h('button', { type: 'button', class: 'btn primary block lg', html: S('search') }, h('span', null, t('Cari referensi'))) as HTMLButtonElement;
   const stageText = h('div', { class: 'pa-stage', 'aria-live': 'polite' });
-  const cancelBtn = ui.btn({ label: 'Batal', cls: 'sm ghost', onClick: () => ctrl?.abort() });
+  const cancelBtn = ui.btn({ label: t('Batal'), cls: 'sm ghost', onClick: () => ctrl?.abort() });
   const aiErr = h('div');
   function paintAi() {
     researchBtn.disabled = !idea.value.trim() || !!ctrl;
-    researchBtn.querySelector('span')!.textContent = hasDraft ? 'Cari ulang' : 'Cari referensi';
+    researchBtn.querySelector('span')!.textContent = hasDraft ? t('Cari ulang') : t('Cari referensi');
     ideaChips.hidden = hasDraft;
   }
   idea.addEventListener('input', paintAi);
@@ -123,7 +124,7 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
     const srcs = (r.sources || []).filter((s) => { try { return /^https?:$/.test(new URL(s.url).protocol); } catch { return false; } }).slice(0, 8);
     const parts: Node[] = [];
     if (r.notes) parts.push(h('div', { class: 'notice ' + (r.redirected ? 'warn' : 'info'), html: S(r.redirected ? 'alert' : 'info') }, h('span', null, r.notes)));
-    if (srcs.length) parts.push(h('div', { class: 'pa-sources' }, h('span', { class: 'label' }, 'Sumber'),
+    if (srcs.length) parts.push(h('div', { class: 'pa-sources' }, h('span', { class: 'label' }, t('Sumber')),
       h('ul', null, ...srcs.map((s) => h('li', null, h('a', { href: s.url, target: '_blank', rel: 'noopener noreferrer', class: 'src-link', html: S('external') },
         h('span', null, s.title || new URL(s.url).hostname), h('small', null, new URL(s.url).hostname.replace(/^www\./, ''))))))));
     aiInfo.replaceChildren(...parts);
@@ -144,7 +145,7 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
     if (ctrl) return;
     const ideaText = kind === 'research' ? idea.value.trim() : (desc.value.trim() || name.value.trim());
     if (!ideaText) {
-      const text = kind === 'research' ? 'Tulis idenya dulu.' : 'Isi nama atau deskripsi dulu, lalu rapikan.';
+      const text = kind === 'research' ? t('Tulis idenya dulu.') : t('Isi nama atau deskripsi dulu, lalu rapikan.');
       (kind === 'research' ? aiErr : msg).replaceChildren(h('div', { class: 'notice warn', html: S('alert') }, h('span', null, text)));
       emit({ type: 'error', kind, text });
       return;
@@ -153,8 +154,8 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
     if (kind === 'refine') undo = { ...draftNow(), lang: lang.value };
     ctrl = new AbortController();
     let i = 0;
-    const stage = (t: string) => { stageText.textContent = t; emit({ type: 'stage', text: t }); };
-    stage(kind === 'refine' ? 'Merapikan persona...' : STAGES[0]);
+    const stage = (tx: string) => { stageText.textContent = tx; emit({ type: 'stage', text: tx }); };
+    stage(kind === 'refine' ? t('Merapikan persona...') : STAGES[0]);
     const timer = setInterval(() => { i = Math.min(STAGES.length - 1, i + 1); if (kind === 'research') stage(STAGES[i]); }, 2600);
     emit({ type: 'busy', on: true, kind });
     paintAi();
@@ -164,7 +165,7 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
       const r = await api.personaAssist({ mode: kind, idea: kind === 'research' ? ideaText.slice(0, 500) : '', ...(kind === 'refine' ? { draft: draftNow() } : {}), ...(lg ? { language: langName(lg) } : {}) }, ctrl.signal);
       const changed = apply(r);
       undoBtn.hidden = kind !== 'refine';
-      ui.toast(kind === 'refine' ? 'Persona dirapikan. Periksa lalu simpan.' : 'Draf persona siap. Ubah sesukamu lalu simpan.', { kind: 'ok', timeout: 2600 });
+      ui.toast(kind === 'refine' ? t('Persona dirapikan. Periksa lalu simpan.') : t('Draf persona siap. Ubah sesukamu lalu simpan.'), { kind: 'ok', timeout: 2600 });
       clearInterval(timer); ctrl = null;
       emit({ type: 'busy', on: false, kind });
       emit({ type: 'applied', kind, result: r, changed });
@@ -172,10 +173,10 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
       clearInterval(timer); ctrl = null;
       emit({ type: 'busy', on: false, kind });
       if (e?.code !== 'aborted') {
-        const text = e?.status === 404 ? 'Fitur Bantu AI belum tersedia di server.' : e?.message || 'Gagal menghubungi AI.';
+        const text = e?.status === 404 ? t('Fitur Bantu AI belum tersedia di server.') : e?.message || t('Gagal menghubungi AI.');
         const box = kind === 'research' ? aiErr : msg;
         box.replaceChildren(h('div', { class: 'notice bad', html: S('alert') }, h('span', null, text),
-          h('button', { type: 'button', class: 'btn sm ghost', onclick: () => assist(kind) }, 'Coba lagi')));
+          h('button', { type: 'button', class: 'btn sm ghost', onclick: () => assist(kind) }, t('Coba lagi'))));
         emit({ type: 'error', kind, text });
       }
     } finally {
@@ -201,15 +202,15 @@ export function personaForm(ctx: ScreenCtx, existing: CustomPersona | null, opts
     openStudio: () => {
       const nm = cleanName(name.value) || 'Persona';
       openOrbStudio({
-        title: 'Studio Bola', subtitle: `Bola untuk ${nm}`, initial: orbCustom, base: orbSpecFor({ voiceId: voice, name: nm }), seedKey: 'p:' + nm.toLowerCase(),
-        resetLabel: 'Ikuti bola suara', onSave: (o) => { orbCustom = o; aiOrb = false; emit({ type: 'change', field: 'voice' }); },
+        title: t('Studio Bola'), subtitle: t('Bola untuk {nm}', { nm }), initial: orbCustom, base: orbSpecFor({ voiceId: voice, name: nm }), seedKey: 'p:' + nm.toLowerCase(),
+        resetLabel: t('Ikuti bola suara'), onSave: (o) => { orbCustom = o; aiOrb = false; emit({ type: 'change', field: 'voice' }); },
       });
     },
     check: () => {
       const nm = cleanName(name.value), ds = desc.value.trim();
-      if (!nm) return { problem: 'Isi nama persona.', field: 'name' };
-      if (!ds) return { problem: 'Isi deskripsi dan sifat persona.', field: 'desc' };
-      if (!voice) return { problem: 'Pilih suara dari koleksimu (atau tambahkan dulu dari Library).', field: 'voice' };
+      if (!nm) return { problem: t('Isi nama persona.'), field: 'name' };
+      if (!ds) return { problem: t('Isi deskripsi dan sifat persona.'), field: 'desc' };
+      if (!voice) return { problem: t('Pilih suara dari koleksimu (atau tambahkan dulu dari Library).'), field: 'voice' };
       return null;
     },
     result: () => ({ ...d, name: cleanName(name.value), description: joinClause(desc.value.trim(), clause), orb: orbCustom, lang: lang.value, accent: cleanAccent(acc.value), voiceId: voice, greeting: greet.value.trim() }),
@@ -240,25 +241,25 @@ export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null
   const isNew = f.isNew;
   let mode: 'ai' | 'manual' = isNew ? 'ai' : 'manual';
   const formEl = h('div', { class: 'stack pa-form' },
-    h('div', { class: 'pa-form-h' }, h('span', { class: 'label' }, 'Detail persona'), h('div', { class: 'row' }, f.undoBtn, f.refineBtn)),
-    field('Nama', f.name),
-    field('Deskripsi & sifat', f.desc, 'Bahasa Indonesia atau Inggris, bebas.'),
+    h('div', { class: 'pa-form-h' }, h('span', { class: 'label' }, t('Detail persona')), h('div', { class: 'row' }, f.undoBtn, f.refineBtn)),
+    field(t('Nama'), f.name),
+    field(t('Deskripsi & sifat'), f.desc, t('Bahasa Indonesia atau Inggris, bebas.')),
     f.clauseBox,
-    h('div', { class: 'grid-2' }, field('Bahasa', f.lang), field('Aksen', h('div', { style: 'display:contents' }, f.acc, f.accList))),
-    field('Suara', f.vp),
-    field('Kalimat pembuka', f.greet, 'Ditampilkan saat percakapan dimulai. Boleh pakai audio tag seperti [laughs].'),
+    h('div', { class: 'grid-2' }, field(t('Bahasa'), f.lang), field(t('Aksen'), h('div', { style: 'display:contents' }, f.acc, f.accList))),
+    field(t('Suara'), f.vp),
+    field(t('Kalimat pembuka'), f.greet, t('Ditampilkan saat percakapan dimulai. Boleh pakai audio tag seperti [laughs].')),
     f.aiInfo);
   const headOrb = orb(f.spec(), { size: 64, cls: 'pa-orb' });
   const headName = h('b');
   const headSub = h('span');
-  const orbBtn = h('button', { type: 'button', class: 'btn sm soft pa-orbbtn', html: S('palette') }, h('span', null, 'Bola'));
-  orbBtn.title = 'Bentuk bola persona ini (Studio Bola)';
+  const orbBtn = h('button', { type: 'button', class: 'btn sm soft pa-orbbtn', html: S('palette') }, h('span', null, t('Bola')));
+  orbBtn.title = t('Bentuk bola persona ini (Studio Bola)');
   orbBtn.onclick = () => f.openStudio();
   const head = h('div', { class: 'pa-head' }, headOrb, h('div', { class: 'pa-head-t' }, headName, headSub), orbBtn);
   function paintHead() {
     headOrb.setSpec(f.spec());
-    headName.textContent = cleanName(f.name.value) || (isNew ? 'Persona baru' : 'Persona');
-    headSub.textContent = [LANGS.find((l) => l[0] === f.lang.value)?.[1], cleanAccent(f.acc.value) ? `aksen ${cleanAccent(f.acc.value)}` : ''].filter(Boolean).join(' · ');
+    headName.textContent = cleanName(f.name.value) || (isNew ? t('Persona baru') : t('Persona'));
+    headSub.textContent = [LANGS.find((l) => l[0] === f.lang.value)?.[1], cleanAccent(f.acc.value) ? t('aksen {accent}', { accent: cleanAccent(f.acc.value) }) : ''].filter(Boolean).join(' · ');
   }
   const loadOrb = orb(f.spec(), { size: 96 });
   const loading = h('div', { class: 'pa-loading', hidden: true },
@@ -266,14 +267,14 @@ export function openClassicEditor(ctx: ScreenCtx, existing: CustomPersona | null
     h('div', { class: 'pa-skel' }, h('span', { class: 'skel', style: 'height:14px;width:70%' }), h('span', { class: 'skel', style: 'height:12px;width:92%' }), h('span', { class: 'skel', style: 'height:12px;width:84%' })),
     f.cancelBtn);
   const aiPane = h('div', { class: 'stack pa-ai' },
-    field('Ide karakter', f.idea, 'Tulis singkat. AI mencari referensi lalu menyusun draf yang bisa kamu ubah.'),
-    f.ideaChips, field('Bahasa persona', f.ideaLang), f.researchBtn, f.aiErr);
-  const modeSeg = seg<'ai' | 'manual'>([['ai', 'Bantu AI', 'sparkle'], ['manual', 'Manual', 'edit']], mode, (v) => { mode = v; paint(); }, 'Cara membuat', true);
+    field(t('Ide karakter'), f.idea, t('Tulis singkat. AI mencari referensi lalu menyusun draf yang bisa kamu ubah.')),
+    f.ideaChips, field(t('Bahasa persona'), f.ideaLang), f.researchBtn, f.aiErr);
+  const modeSeg = seg<'ai' | 'manual'>([['ai', t('Bantu AI'), 'sparkle'], ['manual', t('Manual'), 'edit']], mode, (v) => { mode = v; paint(); }, t('Cara membuat'), true);
   const body = h('div', { class: 'stack pa' }, head, isNew ? modeSeg : null, aiPane, loading, formEl, f.msg);
-  const save = ui.btn({ label: isNew ? 'Simpan persona' : 'Simpan', cls: 'primary' });
-  const cancel = ui.btn({ label: 'Batal', cls: 'ghost' });
+  const save = ui.btn({ label: isNew ? t('Simpan persona') : t('Simpan'), cls: 'primary' });
+  const cancel = ui.btn({ label: t('Batal'), cls: 'ghost' });
   let savedIt = false;
-  const m = ui.modal({ title: isNew ? 'Persona baru' : 'Edit persona', cls: 'persona-dlg', body, actions: [cancel, save], onClose: () => { f.abort(); queueMicrotask(() => opts.onClosed?.(savedIt)); } });
+  const m = ui.modal({ title: isNew ? t('Persona baru') : t('Edit persona'), cls: 'persona-dlg', body, actions: [cancel, save], onClose: () => { f.abort(); queueMicrotask(() => opts.onClosed?.(savedIt)); } });
   function paint() {
     const busy = f.busy();
     aiPane.hidden = mode !== 'ai' || busy;
@@ -318,18 +319,18 @@ export function offerAfterPersona(ctx: ScreenCtx, p: CustomPersona): void {
   const { ui, icons } = ctx;
   const S = icons.svg;
   let cur = p;
-  const big = orb(orbSpecFor(cur), { size: 132, cls: 'offer-orb', live: true, label: `Bola ${cur.name}` });
-  const talk = h('button', { type: 'button', class: 'btn primary lg block', html: S('chat') }, h('span', null, `Ngobrol dengan ${cur.name}`));
-  const shape = h('button', { type: 'button', class: 'btn soft lg block', html: S('palette') }, h('span', null, cur.orb ? 'Ubah bolanya' : 'Bentuk bolanya'));
-  const m = ui.modal({ title: 'Persona siap', cls: 'offer-dlg', body: h('div', { class: 'offer' }, big,
-    h('h3', null, cur.name), h('p', null, 'Kamu bisa langsung ngobrol dengan suara, atau bentuk dulu bola miliknya di Studio Bola.'), talk, shape) });
+  const big = orb(orbSpecFor(cur), { size: 132, cls: 'offer-orb', live: true, label: t('Bola {name}', { name: cur.name }) });
+  const talk = h('button', { type: 'button', class: 'btn primary lg block', html: S('chat') }, h('span', null, t('Ngobrol dengan {name}', { name: cur.name })));
+  const shape = h('button', { type: 'button', class: 'btn soft lg block', html: S('palette') }, h('span', null, cur.orb ? t('Ubah bolanya') : t('Bentuk bolanya')));
+  const m = ui.modal({ title: t('Persona siap'), cls: 'offer-dlg', body: h('div', { class: 'offer' }, big,
+    h('h3', null, cur.name), h('p', null, t('Kamu bisa langsung ngobrol dengan suara, atau bentuk dulu bola miliknya di Studio Bola.')), talk, shape) });
   // match-cut: the persona editor hands its orb over; it flies onto this one (nothing happens otherwise)
   void receiveOrb(big);
   // shared element: this orb flies onto the chat's big orb
   talk.onclick = () => { const g = orbGhost(big); m.close(); if (g) handOff(g); ctx.navigate('chat/' + encodeURIComponent(cur.id)); };
   shape.onclick = () => openOrbStudio({
-    title: 'Studio Bola', subtitle: `Bola untuk ${cur.name}`, initial: cur.orb || null, base: orbSpecFor({ voiceId: cur.voiceId, name: cur.name }), seedKey: 'p:' + cur.name.toLowerCase(),
-    resetLabel: 'Ikuti bola suara',
-    onSave: (o) => { cur = { ...cur, orb: o }; saveCustom(cur); big.setSpec(orbSpecFor(cur)); shape.querySelector('span')!.textContent = 'Ubah bolanya'; ui.toast('Bola tersimpan.', { kind: 'ok', timeout: 1800 }); },
+    title: t('Studio Bola'), subtitle: t('Bola untuk {nm}', { nm: cur.name }), initial: cur.orb || null, base: orbSpecFor({ voiceId: cur.voiceId, name: cur.name }), seedKey: 'p:' + cur.name.toLowerCase(),
+    resetLabel: t('Ikuti bola suara'),
+    onSave: (o) => { cur = { ...cur, orb: o }; saveCustom(cur); big.setSpec(orbSpecFor(cur)); shape.querySelector('span')!.textContent = t('Ubah bolanya'); ui.toast(t('Bola tersimpan.'), { kind: 'ok', timeout: 1800 }); },
   });
 }

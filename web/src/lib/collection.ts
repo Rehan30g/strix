@@ -5,6 +5,7 @@ import { loadVoices, store } from '../store';
 import { toast } from '../ui/overlay';
 import { haptic } from '../ui/gesture';
 import { brandName } from './persona';
+import { t } from '../i18n';
 
 export const shortName = (v: Pick<Voice, 'name'>) => brandName(v.name.split(' - ')[0]);
 /** Is this voice in the collection? Matches the collection id and, for library voices, the source voice id. */
@@ -20,7 +21,7 @@ export async function addVoiceResult(v: Pick<Voice, 'id' | 'ownerId'>): Promise<
     return { ok: true, voiceId: r?.voiceId || v.id };
   } catch (e: any) {
     if (e?.code === 'already_in_collection') { await loadVoices(true).catch(() => {}); return { ok: true, voiceId: v.id }; }
-    return { ok: false, code: e?.code || 'error', message: e?.message || 'Gagal menambahkan suara.' };
+    return { ok: false, code: e?.code || 'error', message: e?.message || t('Gagal menambahkan suara.') };
   }
 }
 
@@ -29,11 +30,11 @@ export async function addVoice(v: Voice): Promise<boolean> {
   const r = await addVoiceResult(v);
   if (!r.ok) {
     const soft = r.code === 'slots_full' || r.code === 'collection_full' || r.code === 'not_addable' || r.code === 'voice_forbidden';
-    toast(r.message, { kind: soft ? 'warn' : 'bad', title: r.code === 'slots_full' ? 'Slot suara penuh' : 'Belum bisa ditambahkan' });
+    toast(r.message, { kind: soft ? 'warn' : 'bad', title: r.code === 'slots_full' ? t('Slot suara penuh') : t('Belum bisa ditambahkan') });
     return false;
   }
   haptic();
-  toast(`"${shortName(v)}" ditambahkan ke koleksimu.`, { kind: 'ok', timeout: 2600 });
+  toast(t('"{name}" ditambahkan ke koleksimu.', { name: shortName(v) }), { kind: 'ok', timeout: 2600 });
   return true;
 }
 
@@ -41,17 +42,17 @@ export async function addVoice(v: Voice): Promise<boolean> {
 export async function removeVoice(v: Voice): Promise<boolean> {
   try { await api.removeFromCollection(v.id); }
   catch (e: any) {
-    if (e?.status !== 404) { toast(e?.message || 'Gagal menghapus suara dari koleksi.', { kind: 'bad' }); return false; }
+    if (e?.status !== 404) { toast(e?.message || t('Gagal menghapus suara dari koleksi.'), { kind: 'bad' }); return false; }
   }
   haptic();
-  toast(`"${shortName(v)}" dihapus dari koleksi.`, { kind: 'ok', timeout: 2600 });
+  toast(t('"{name}" dihapus dari koleksi.', { name: shortName(v) }), { kind: 'ok', timeout: 2600 });
   await loadVoices(true).catch(() => {});
   return true;
 }
 
 export function categoryLabel(v: Voice): string {
-  if (v.own) return 'Milikmu';
-  if (v.category === 'shared') return 'Bersama';
-  if (v.category === 'premade') return 'Bawaan';
+  if (v.own) return t('Milikmu');
+  if (v.category === 'shared') return t('Bersama');
+  if (v.category === 'premade') return t('Bawaan');
   return 'Library';
 }
