@@ -186,17 +186,17 @@ export function mount(root: HTMLElement, ctx: ScreenCtx): () => void {
       catch (e: any) { ui.toast(e.message, { kind: 'bad' }); save.disabled = false; }
     };
   }
-  /* ---------- quota requests (a tester whose daily quota ran out asked for more) ---------- */
+  /* ---------- quota appeals (chat threads with testers whose daily quota ran out) ---------- */
   const reqBody = h('div', { class: 'card-b stack', style: 'gap:8px' });
-  const reqView = h('section', { class: 'card', hidden: true }, h('div', { class: 'card-h' }, h('h2', null, 'Permintaan tambahan kuota')), reqBody);
+  const reqView = h('section', { class: 'card', hidden: true }, h('div', { class: 'card-h' }, h('h2', null, 'Pesan dari penguji')), reqBody);
   async function loadRequests() {
     try {
-      const rs = (await api.get<{ requests: Array<{ userId: number; email: string; kind: string; note: string; createdAt: string }> }>('/admin/requests')).requests || [];
-      reqView.hidden = !rs.length;
-      reqBody.replaceChildren(...rs.map((r) => h('div', { style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap' },
-        h('div', { style: 'flex:1 1 220px;min-width:0' }, h('b', null, r.email), h('div', { class: 'hint' }, (r.kind || 'kuota') + (r.note ? ' · ' + r.note : ''))),
-        ui.btn({ label: 'Atur kuota', cls: 'sm', onClick: () => { const u = users.find((x) => x.id === r.userId); if (u) editQuota(u); else ui.toast('Buka tab Pengguna dulu.', { kind: 'warn' }); } }),
-        ui.btn({ label: 'Selesai', cls: 'ghost sm', onClick: async () => { try { await api.del('/admin/requests/' + r.userId); await loadRequests(); } catch (e: any) { ui.toast(e.message, { kind: 'bad' }); } } }))));
+      const ts = (await api.get<{ threads: Array<{ userId: number; email: string; kind: string; open: boolean; awaiting: boolean; last: string; updatedAt: string }> }>('/admin/threads')).threads || [];
+      reqView.hidden = !ts.length;
+      reqBody.replaceChildren(...ts.map((t) => h('button', { type: 'button', class: 'acct-link', style: t.open ? '' : 'opacity:.6', onclick: () => import('../../ui/appeal').then((x) => x.openAdminThread({
+        userId: t.userId, email: t.email, onChange: () => loadRequests(),
+        onQuota: () => { const u = users.find((y) => y.id === t.userId); if (u) editQuota(u); else ui.toast('Buka tab Pengguna dulu.', { kind: 'warn' }); },
+      })) }, h('span', null, h('b', null, t.email, t.awaiting ? h('i', { class: 'acct-dot' }) : null), h('small', { class: 'acct-sub' }, (t.open ? '' : '(ditutup) ') + (t.last || ''))))));
     } catch { /* optional */ }
   }
   const usersView = h('section', { class: 'card' },

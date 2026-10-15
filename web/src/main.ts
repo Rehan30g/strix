@@ -76,17 +76,12 @@ async function boot() {
 function quotaNotice(kind: string, message: string) {
   const text = message.split(' Butuh tambahan?')[0];
   import('./ui/overlay').then(({ modal }) => {
-    const note = h('textarea', { class: 'input', rows: '2', maxLength: 300, placeholder: 'Untuk apa tambahannya? (boleh dikosongkan)', style: 'width:100%;margin-top:12px' }) as HTMLTextAreaElement;
-    const body = h('div', null, h('p', { style: 'margin:0' }, text), h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Tunggu sampai direset, atau minta tambahan ke yang mengundangmu.'), note);
+    const body = h('div', null, h('p', { style: 'margin:0' }, text), h('p', { class: 'hint', style: 'margin:8px 0 0' }, 'Kuota ini terbatas karena kredit uji coba terbatas. Tunggu sampai direset, atau tulis pesan ke admin kalau butuh lebih.'));
     const close = h('button', { type: 'button', class: 'btn ghost' }, 'Tunggu saja') as HTMLButtonElement;
-    const ask = h('button', { type: 'button', class: 'btn primary' }, 'Minta tambahan') as HTMLButtonElement;
-    const m = modal({ title: 'Kuota habis', body, key: 'quota-notice', actions: [close, ask] });
-    close.onclick = () => m.close();
-    ask.onclick = async () => {
-      ask.disabled = true;
-      try { await api.post('/quota/request', { kind, note: note.value.trim() }); m.close(); toast('Permintaan terkirim. Kamu akan dikabari lewat pengundangmu.', { kind: 'ok' }); }
-      catch (err: any) { toast(err?.message || 'Gagal mengirim permintaan.', { kind: 'bad' }); ask.disabled = false; }
-    };
+    const ask = h('button', { type: 'button', class: 'btn primary' }, 'Tulis ke admin') as HTMLButtonElement;
+    const dlg = modal({ title: 'Kuota habis', body, key: 'quota-notice', actions: [close, ask] });
+    close.onclick = () => dlg.close();
+    ask.onclick = () => { dlg.close(); import('./ui/appeal').then((x) => x.openAppeal(kind)).catch(() => {}); };
   }).catch(() => toast(message, { kind: 'warn', title: 'Kuota habis', timeout: 8000 }));
 }
 

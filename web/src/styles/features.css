@@ -84,3 +84,18 @@ button.acct-link { width: 100%; background: transparent; text-align: left; }
 .about-repo span { display: block; font-weight: 600; }
 .about-repo small { display: block; color: var(--muted); font-weight: 400; }
 .acct-sub { display: block; font-weight: 400; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+
+/* appeal chat (tester <-> admin) */
+.ap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ap-list { display: flex; flex-direction: column; gap: 8px; max-height: min(52vh, 420px); min-height: 120px; overflow-y: auto; padding: 4px 2px; }
+.ap-msg { display: flex; flex-direction: column; gap: 2px; max-width: 82%; }
+.ap-msg small { font-size: 11px; color: var(--muted); }
+.ap-b { padding: 9px 13px; border-radius: 16px; background: var(--surface-2); color: var(--fg); overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.4; }
+.ap-msg.me { align-self: flex-end; align-items: flex-end; }
+.ap-msg.me .ap-b { background: var(--accent); color: var(--accent-fg, #fff); border-bottom-right-radius: 5px; }
+.ap-msg.them .ap-b { border-bottom-left-radius: 5px; }
+.ap-empty { margin: auto; text-align: center; padding: 8px 6px; }
+.ap-form { display: flex; gap: 8px; align-items: flex-end; }
+.ap-in { flex: 1; min-height: 44px; max-height: 120px; resize: none; }
+.ap-send { flex: none; width: 44px; height: 44px; }
+.acct-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: inline-block; margin-left: 8px; vertical-align: middle; }
