@@ -4,7 +4,7 @@ body { background: #050507; color: #b9bcc6; font: 17px/1.7 ui-monospace, "Cascad
 #log p { margin: 0; opacity: 0; transform: translateY(4px); transition: opacity 1.2s ease, transform 1.2s ease; }
 #log p.in { opacity: 1; transform: none; }
 #log p.old { opacity: .42; }
-#log p.last { color: #7d8191; font-size: .85em; letter-spacing: .12em; text-transform: uppercase; }
+#log p.last { color: #7d8191; font-size: .85em; letter-spacing: .12em;  }
 #log .cur::after { content: "▍"; margin-left: 2px; animation: blink 1s steps(2) infinite; color: #8b8fa3; }
 #dot { position: fixed; left: 50%; bottom: 36px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #6a6e80; animation: pulse 3.4s ease-in-out infinite; }
 .ns { color: #b9bcc6; text-align: center; }
