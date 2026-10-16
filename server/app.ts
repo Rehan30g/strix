@@ -25,6 +25,7 @@ import { decideRoutes } from './decide.js';
 import { memoryRoutes } from './memory.js';
 import { duoRoutes } from './duo.js';
 import { QuotaError } from './quota.js';
+import { sunsetHook } from './sunset.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -72,6 +73,7 @@ export async function buildApp() {
   });
   await app.register(multipart, { limits: { fileSize: Math.max(config.quota.maxCloneUploadMb, config.quota.maxVcUploadMb) * 1024 * 1024, files: 3 } });
 
+  sunsetHook(app);
   accessHook(app);
 
   app.setErrorHandler((err: FastifyError & { error?: string; retryAfter?: string }, req, reply) => {
