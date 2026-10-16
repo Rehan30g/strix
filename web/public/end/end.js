@@ -2,7 +2,7 @@
 (function () {
   var lines = [
     '...',
-    'hello? anyone still on this frequency?',
+    'hello? is anyone still here?',
     "ok. i'm not from around here. i don't even know what you call this place.",
     'there used to be a little signal here. a voice, a light somebody forgot to turn off.',
     'it stopped on october 20th. nothing exploded. it just kind of... stopped. like everything does eventually.',
